@@ -1,11 +1,13 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight } from 'lucide-react';
+import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight, Wrench, BarChart3, FileStack } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { SqlFixButton } from '@/components/SqlFixButton';
+import { CriteriaChart } from '@/components/CriteriaChart';
+import { BatchProcessor } from '@/components/BatchProcessor';
 
 interface ParsedTicket {
   id: string;
@@ -27,6 +29,7 @@ const Index = () => {
   const [parsedTicket, setParsedTicket] = useState<ParsedTicket | null>(null);
   const [results, setResults] = useState<QueryResult[]>([]);
   const [isApiMode, setIsApiMode] = useState(false);
+  const [isBatchMode, setIsBatchMode] = useState(false);
   const { toast } = useToast();
 
   const mockTicketExample = `Ticket #HELIX-12345
@@ -96,6 +99,19 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     }, 1000);
   };
 
+  const handleSqlFixed = (fixedSql: string) => {
+    if (parsedTicket) {
+      setParsedTicket({
+        ...parsedTicket,
+        sql: fixedSql
+      });
+      toast({
+        title: "SQL fixed",
+        description: "The SQL has been automatically corrected."
+      });
+    }
+  };
+
   const evaluateCriteria = () => {
     if (!results.length) return { passed: false, message: "No results" };
     
@@ -107,7 +123,9 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     
     return {
       passed: rowCountPassed && maxSalesPassed,
-      message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 100), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 5000)`
+      message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 100), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 5000)`,
+      rowCount,
+      maxSales
     };
   };
 
@@ -149,12 +167,37 @@ Execution timestamp: ${new Date().toISOString()}`;
     });
   };
 
+  if (isBatchMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Batch SQL Ticket Processing</h1>
+            <p className="text-xl text-gray-600">Process multiple tickets simultaneously</p>
+          </div>
+          
+          <BatchProcessor onBack={() => setIsBatchMode(false)} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">SQL Ticket Workflow</h1>
           <p className="text-xl text-gray-600">Automated SQL execution and validation system</p>
+          <div className="flex justify-center gap-4 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsBatchMode(true)}
+              className="flex items-center gap-2"
+            >
+              <FileStack className="w-4 h-4" />
+              Batch Processing
+            </Button>
+          </div>
         </div>
 
         {/* Progress Steps */}
@@ -234,7 +277,13 @@ Execution timestamp: ${new Date().toISOString()}`;
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <h3 className="font-semibold mb-2">Extracted SQL:</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold">Extracted SQL:</h3>
+                  <SqlFixButton 
+                    sql={parsedTicket.sql} 
+                    onSqlFixed={handleSqlFixed}
+                  />
+                </div>
                 <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
                   {parsedTicket.sql}
                 </pre>
@@ -296,6 +345,19 @@ Execution timestamp: ${new Date().toISOString()}`;
                   <p className="text-sm text-gray-600 mt-2">
                     {evaluateCriteria().message}
                   </p>
+                </div>
+
+                {/* Visual Criteria Indicators */}
+                <div className="mb-6">
+                  <h3 className="font-semibold mb-4 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Criteria Visualization
+                  </h3>
+                  <CriteriaChart 
+                    rowCount={evaluateCriteria().rowCount} 
+                    maxSales={evaluateCriteria().maxSales}
+                    results={results}
+                  />
                 </div>
 
                 <div className="border rounded-lg overflow-hidden">
