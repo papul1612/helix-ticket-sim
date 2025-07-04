@@ -10,6 +10,7 @@ import { SqlFixButton } from '@/components/SqlFixButton';
 import { SimpleCriteriaChart } from '@/components/SimpleCriteriaChart';
 import { BatchProcessor } from '@/components/BatchProcessor';
 import { ErrorDialog } from '@/components/ErrorDialog';
+import { MultiQueryResults } from '@/components/MultiQueryResults';
 
 interface ParsedTicket {
   id: string;
@@ -140,6 +141,155 @@ ORDR BY sales DESC`,
         region: i % 2 === 0 ? 'West' : 'East',
         date: `2024-0${Math.floor(Math.random() * 3) + 1}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`
       }))
+    },
+    'HELIX-22222': {
+      id: 'HELIX-22222',
+      description: 'Multi-query report - ALL QUERIES PASS',
+      sqlQueries: [
+        `SELECT product_id, sales, region 
+FROM orders 
+WHERE sales > 2000 
+ORDER BY sales DESC;`,
+        `SELECT region, COUNT(*) as order_count, AVG(sales) as avg_sales
+FROM orders 
+WHERE sales > 2000 
+GROUP BY region;`,
+        `SELECT customer_id, total_spent 
+FROM customer_summary 
+WHERE total_spent > 3000;`
+      ],
+      sql: `-- Query 1: High-value orders
+SELECT product_id, sales, region 
+FROM orders 
+WHERE sales > 2000 
+ORDER BY sales DESC;
+
+-- Query 2: Regional sales analysis
+SELECT region, COUNT(*) as order_count, AVG(sales) as avg_sales
+FROM orders 
+WHERE sales > 2000 
+GROUP BY region;
+
+-- Query 3: Premium customers
+SELECT customer_id, total_spent 
+FROM customer_summary 
+WHERE total_spent > 3000;`,
+      criteria: 'Query 1: ROWCOUNT > 50 AND MAX(sales) > 4000; Query 2: ROWCOUNT > 2 AND AVG(avg_sales) > 3000; Query 3: ROWCOUNT > 30 AND MAX(total_spent) > 5000',
+      mockResults: {
+        query1: Array(75).fill(null).map((_, i) => ({
+          product_id: `PROD-${5000 + i}`,
+          sales: Math.floor(Math.random() * 4000) + 2000,
+          region: i % 3 === 0 ? 'North' : i % 3 === 1 ? 'South' : 'West'
+        })),
+        query2: [
+          { region: 'North', order_count: 25, avg_sales: 3200 },
+          { region: 'South', order_count: 30, avg_sales: 3400 },
+          { region: 'West', order_count: 20, avg_sales: 3100 }
+        ],
+        query3: Array(45).fill(null).map((_, i) => ({
+          customer_id: `CUST-${6000 + i}`,
+          total_spent: Math.floor(Math.random() * 3000) + 3000
+        }))
+      }
+    },
+    'HELIX-33333': {
+      id: 'HELIX-33333',
+      description: 'Multi-query report - ALL QUERIES FAIL',
+      sqlQueries: [
+        `SELECT product_id, sales 
+FROM orders 
+WHERE sales > 1000 
+LIMIT 10;`,
+        `SELECT region, COUNT(*) as customer_count
+FROM customers 
+GROUP BY region 
+LIMIT 2;`,
+        `SELECT inventory_id, stock_level
+FROM inventory 
+WHERE stock_level < 100 
+LIMIT 5;`
+      ],
+      sql: `-- Query 1: Basic sales data (will fail row count)
+SELECT product_id, sales 
+FROM orders 
+WHERE sales > 1000 
+LIMIT 10;
+
+-- Query 2: Customer regions (will fail row count)
+SELECT region, COUNT(*) as customer_count
+FROM customers 
+GROUP BY region 
+LIMIT 2;
+
+-- Query 3: Low inventory (will fail criteria)
+SELECT inventory_id, stock_level
+FROM inventory 
+WHERE stock_level < 100 
+LIMIT 5;`,
+      criteria: 'Query 1: ROWCOUNT > 50 AND MAX(sales) > 5000; Query 2: ROWCOUNT > 10 AND MAX(customer_count) > 1000; Query 3: ROWCOUNT > 20 AND MIN(stock_level) < 10',
+      mockResults: {
+        query1: Array(10).fill(null).map((_, i) => ({
+          product_id: `PROD-${7000 + i}`,
+          sales: Math.floor(Math.random() * 2000) + 1000
+        })),
+        query2: [
+          { region: 'East', customer_count: 150 },
+          { region: 'West', customer_count: 200 }
+        ],
+        query3: Array(5).fill(null).map((_, i) => ({
+          inventory_id: `INV-${8000 + i}`,
+          stock_level: Math.floor(Math.random() * 50) + 20
+        }))
+      }
+    },
+    'HELIX-44444': {
+      id: 'HELIX-44444',
+      description: 'Multi-query report - MIXED RESULTS (some pass, some fail)',
+      sqlQueries: [
+        `SELECT product_id, sales, category
+FROM products 
+WHERE sales > 1500 
+ORDER BY sales DESC;`,
+        `SELECT store_id, revenue, employees
+FROM stores 
+WHERE revenue > 50000;`,
+        `SELECT campaign_id, clicks, conversions
+FROM marketing_campaigns 
+WHERE clicks > 100;`
+      ],
+      sql: `-- Query 1: Product sales (WILL PASS)
+SELECT product_id, sales, category
+FROM products 
+WHERE sales > 1500 
+ORDER BY sales DESC;
+
+-- Query 2: Store performance (WILL FAIL)
+SELECT store_id, revenue, employees
+FROM stores 
+WHERE revenue > 50000;
+
+-- Query 3: Marketing campaigns (WILL PASS)
+SELECT campaign_id, clicks, conversions
+FROM marketing_campaigns 
+WHERE clicks > 100;`,
+      criteria: 'Query 1: ROWCOUNT > 40 AND MAX(sales) > 4000; Query 2: ROWCOUNT > 50 AND AVG(revenue) > 75000; Query 3: ROWCOUNT > 25 AND MAX(clicks) > 500',
+      mockResults: {
+        query1: Array(60).fill(null).map((_, i) => ({
+          product_id: `PROD-${9000 + i}`,
+          sales: Math.floor(Math.random() * 3000) + 1500,
+          category: i % 4 === 0 ? 'Electronics' : i % 4 === 1 ? 'Clothing' : i % 4 === 2 ? 'Home' : 'Sports'
+        })),
+        query2: Array(15).fill(null).map((_, i) => ({
+          store_id: `STORE-${100 + i}`,
+          revenue: Math.floor(Math.random() * 30000) + 50000,
+          employees: Math.floor(Math.random() * 20) + 5
+        })),
+        query3: Array(35).fill(null).map((_, i) => ({
+          campaign_id: `CAMP-${200 + i}`,
+          clicks: Math.floor(Math.random() * 800) + 100,
+          conversions: Math.floor(Math.random() * 50) + 5
+        }))
+      }
     }
   };
 
@@ -404,7 +554,12 @@ Success Criteria: ${ticket.criteria}`);
       const ticket = mockHelixTickets[parsedTicket.id];
       
       if (ticket) {
-        // Handle specific ticket criteria
+        // Handle multi-query tickets
+        if (ticket.mockResults && typeof ticket.mockResults === 'object' && !Array.isArray(ticket.mockResults)) {
+          return evaluateMultiQueryCriteria(parsedTicket.id, ticket.mockResults);
+        }
+        
+        // Handle specific single-query ticket criteria
         if (parsedTicket.id === 'HELIX-54321') {
           // Inventory ticket - ROWCOUNT > 200 AND MIN(inventory_count) < 10
           const minInventory = Math.min(...results.map(r => (r as any).inventory_count || 0));
@@ -416,18 +571,6 @@ Success Criteria: ${ticket.criteria}`);
             message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 200), MIN(inventory_count) = ${minInventory} (${minInventoryPassed ? '✅' : '❌'} < 10)`,
             rowCount,
             maxSales: 0
-          };
-        } else if (parsedTicket.id === 'HELIX-98765') {
-          // Customer analysis - ROWCOUNT > 50 AND AVG(total_spent) > 1500
-          const avgSpent = results.reduce((sum, r) => sum + ((r as any).total_spent || 0), 0) / results.length;
-          const rowCountPassed = rowCount > 50;
-          const avgSpentPassed = avgSpent > 1500;
-          
-          return {
-            passed: rowCountPassed && avgSpentPassed,
-            message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 50), AVG(total_spent) = ${avgSpent.toFixed(2)} (${avgSpentPassed ? '✅' : '❌'} > 1500)`,
-            rowCount,
-            maxSales: avgSpent
           };
         } else if (parsedTicket.id === 'HELIX-11111') {
           // Fixed SQL ticket - ROWCOUNT > 80 AND MAX(sales) > 3000
@@ -455,6 +598,180 @@ Success Criteria: ${ticket.criteria}`);
       message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 100), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 5000)`,
       rowCount,
       maxSales
+    };
+  };
+
+  const evaluateMultiQueryCriteria = (ticketId: string, mockResults: any) => {
+    const queryEvaluations = [];
+    let overallPassed = true;
+
+    if (ticketId === 'HELIX-98765') {
+      // Original multi-query customer analysis
+      const avgSpent = results.reduce((sum, r) => sum + ((r as any).total_spent || 0), 0) / results.length;
+      const rowCountPassed = results.length > 50;
+      const avgSpentPassed = avgSpent > 1500;
+      
+      return {
+        passed: rowCountPassed && avgSpentPassed,
+        message: `ROWCOUNT = ${results.length} (${rowCountPassed ? '✅' : '❌'} > 50), AVG(total_spent) = ${avgSpent.toFixed(2)} (${avgSpentPassed ? '✅' : '❌'} > 1500)`,
+        rowCount: results.length,
+        maxSales: avgSpent,
+        queryEvaluations: [{
+          queryNumber: 1,
+          passed: rowCountPassed && avgSpentPassed,
+          message: `ROWCOUNT = ${results.length} (${rowCountPassed ? '✅' : '❌'} > 50), AVG(total_spent) = ${avgSpent.toFixed(2)} (${avgSpentPassed ? '✅' : '❌'} > 1500)`,
+          rowCount: results.length,
+          results: results.slice(0, 10)
+        }]
+      };
+    } else if (ticketId === 'HELIX-22222') {
+      // All queries pass scenario
+      const query1Results = mockResults.query1;
+      const query2Results = mockResults.query2;
+      const query3Results = mockResults.query3;
+      
+      // Query 1: ROWCOUNT > 50 AND MAX(sales) > 4000
+      const q1RowCount = query1Results.length;
+      const q1MaxSales = Math.max(...query1Results.map(r => r.sales));
+      const q1Pass = q1RowCount > 50 && q1MaxSales > 4000;
+      
+      // Query 2: ROWCOUNT > 2 AND AVG(avg_sales) > 3000
+      const q2RowCount = query2Results.length;
+      const q2AvgSales = query2Results.reduce((sum, r) => sum + r.avg_sales, 0) / query2Results.length;
+      const q2Pass = q2RowCount > 2 && q2AvgSales > 3000;
+      
+      // Query 3: ROWCOUNT > 30 AND MAX(total_spent) > 5000
+      const q3RowCount = query3Results.length;
+      const q3MaxSpent = Math.max(...query3Results.map(r => r.total_spent));
+      const q3Pass = q3RowCount > 30 && q3MaxSpent > 5000;
+      
+      queryEvaluations.push(
+        {
+          queryNumber: 1,
+          passed: q1Pass,
+          message: `ROWCOUNT = ${q1RowCount} (${q1RowCount > 50 ? '✅' : '❌'} > 50), MAX(sales) = ${q1MaxSales} (${q1MaxSales > 4000 ? '✅' : '❌'} > 4000)`,
+          rowCount: q1RowCount,
+          results: query1Results.slice(0, 10)
+        },
+        {
+          queryNumber: 2,
+          passed: q2Pass,
+          message: `ROWCOUNT = ${q2RowCount} (${q2RowCount > 2 ? '✅' : '❌'} > 2), AVG(avg_sales) = ${q2AvgSales.toFixed(2)} (${q2AvgSales > 3000 ? '✅' : '❌'} > 3000)`,
+          rowCount: q2RowCount,
+          results: query2Results
+        },
+        {
+          queryNumber: 3,
+          passed: q3Pass,
+          message: `ROWCOUNT = ${q3RowCount} (${q3RowCount > 30 ? '✅' : '❌'} > 30), MAX(total_spent) = ${q3MaxSpent} (${q3MaxSpent > 5000 ? '✅' : '❌'} > 5000)`,
+          rowCount: q3RowCount,
+          results: query3Results.slice(0, 10)
+        }
+      );
+      
+      overallPassed = q1Pass && q2Pass && q3Pass;
+      
+    } else if (ticketId === 'HELIX-33333') {
+      // All queries fail scenario
+      const query1Results = mockResults.query1;
+      const query2Results = mockResults.query2;
+      const query3Results = mockResults.query3;
+      
+      // Query 1: ROWCOUNT > 50 AND MAX(sales) > 5000 (WILL FAIL)
+      const q1RowCount = query1Results.length;
+      const q1MaxSales = Math.max(...query1Results.map(r => r.sales));
+      const q1Pass = q1RowCount > 50 && q1MaxSales > 5000;
+      
+      // Query 2: ROWCOUNT > 10 AND MAX(customer_count) > 1000 (WILL FAIL)
+      const q2RowCount = query2Results.length;
+      const q2MaxCustomers = Math.max(...query2Results.map(r => r.customer_count));
+      const q2Pass = q2RowCount > 10 && q2MaxCustomers > 1000;
+      
+      // Query 3: ROWCOUNT > 20 AND MIN(stock_level) < 10 (WILL FAIL)
+      const q3RowCount = query3Results.length;
+      const q3MinStock = Math.min(...query3Results.map(r => r.stock_level));
+      const q3Pass = q3RowCount > 20 && q3MinStock < 10;
+      
+      queryEvaluations.push(
+        {
+          queryNumber: 1,
+          passed: q1Pass,
+          message: `ROWCOUNT = ${q1RowCount} (${q1RowCount > 50 ? '✅' : '❌'} > 50), MAX(sales) = ${q1MaxSales} (${q1MaxSales > 5000 ? '✅' : '❌'} > 5000)`,
+          rowCount: q1RowCount,
+          results: query1Results
+        },
+        {
+          queryNumber: 2,
+          passed: q2Pass,
+          message: `ROWCOUNT = ${q2RowCount} (${q2RowCount > 10 ? '✅' : '❌'} > 10), MAX(customer_count) = ${q2MaxCustomers} (${q2MaxCustomers > 1000 ? '✅' : '❌'} > 1000)`,
+          rowCount: q2RowCount,
+          results: query2Results
+        },
+        {
+          queryNumber: 3,
+          passed: q3Pass,
+          message: `ROWCOUNT = ${q3RowCount} (${q3RowCount > 20 ? '✅' : '❌'} > 20), MIN(stock_level) = ${q3MinStock} (${q3MinStock < 10 ? '✅' : '❌'} < 10)`,
+          rowCount: q3RowCount,
+          results: query3Results
+        }
+      );
+      
+      overallPassed = q1Pass && q2Pass && q3Pass;
+      
+    } else if (ticketId === 'HELIX-44444') {
+      // Mixed results scenario (some pass, some fail)
+      const query1Results = mockResults.query1;
+      const query2Results = mockResults.query2;
+      const query3Results = mockResults.query3;
+      
+      // Query 1: ROWCOUNT > 40 AND MAX(sales) > 4000 (WILL PASS)
+      const q1RowCount = query1Results.length;
+      const q1MaxSales = Math.max(...query1Results.map(r => r.sales));
+      const q1Pass = q1RowCount > 40 && q1MaxSales > 4000;
+      
+      // Query 2: ROWCOUNT > 50 AND AVG(revenue) > 75000 (WILL FAIL)
+      const q2RowCount = query2Results.length;
+      const q2AvgRevenue = query2Results.reduce((sum, r) => sum + r.revenue, 0) / query2Results.length;
+      const q2Pass = q2RowCount > 50 && q2AvgRevenue > 75000;
+      
+      // Query 3: ROWCOUNT > 25 AND MAX(clicks) > 500 (WILL PASS)
+      const q3RowCount = query3Results.length;
+      const q3MaxClicks = Math.max(...query3Results.map(r => r.clicks));
+      const q3Pass = q3RowCount > 25 && q3MaxClicks > 500;
+      
+      queryEvaluations.push(
+        {
+          queryNumber: 1,
+          passed: q1Pass,
+          message: `ROWCOUNT = ${q1RowCount} (${q1RowCount > 40 ? '✅' : '❌'} > 40), MAX(sales) = ${q1MaxSales} (${q1MaxSales > 4000 ? '✅' : '❌'} > 4000)`,
+          rowCount: q1RowCount,
+          results: query1Results.slice(0, 10)
+        },
+        {
+          queryNumber: 2,
+          passed: q2Pass,
+          message: `ROWCOUNT = ${q2RowCount} (${q2RowCount > 50 ? '✅' : '❌'} > 50), AVG(revenue) = ${q2AvgRevenue.toFixed(2)} (${q2AvgRevenue > 75000 ? '✅' : '❌'} > 75000)`,
+          rowCount: q2RowCount,
+          results: query2Results
+        },
+        {
+          queryNumber: 3,
+          passed: q3Pass,
+          message: `ROWCOUNT = ${q3RowCount} (${q3RowCount > 25 ? '✅' : '❌'} > 25), MAX(clicks) = ${q3MaxClicks} (${q3MaxClicks > 500 ? '✅' : '❌'} > 500)`,
+          rowCount: q3RowCount,
+          results: query3Results.slice(0, 10)
+        }
+      );
+      
+      overallPassed = q1Pass && q2Pass && q3Pass;
+    }
+    
+    return {
+      passed: overallPassed,
+      message: `Multi-query evaluation: ${queryEvaluations.filter(q => q.passed).length} of ${queryEvaluations.length} queries passed`,
+      rowCount: queryEvaluations.reduce((sum, q) => sum + q.rowCount, 0),
+      maxSales: 0,
+      queryEvaluations
     };
   };
 
@@ -617,27 +934,39 @@ Execution timestamp: ${new Date().toISOString()}`;
                     </div>
                   </div>
                   
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-blue-900 mb-2">Available Test Tickets:</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>HELIX-12345</span>
-                        <span className="text-blue-600">✅ Criteria will pass</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>HELIX-54321</span>
-                        <span className="text-red-600">❌ Criteria will fail</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>HELIX-98765</span>
-                        <span className="text-purple-600">📊 Multiple SQL queries</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>HELIX-11111</span>
-                        <span className="text-orange-600">🔧 SQL needs fixing</span>
-                      </div>
-                    </div>
-                  </div>
+                   <div className="bg-blue-50 p-4 rounded-lg">
+                     <h4 className="font-semibold text-blue-900 mb-2">Available Test Tickets:</h4>
+                     <div className="space-y-2 text-sm">
+                       <div className="flex justify-between">
+                         <span>HELIX-12345</span>
+                         <span className="text-blue-600">✅ Single query - will pass</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-54321</span>
+                         <span className="text-red-600">❌ Single query - will fail</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-98765</span>
+                         <span className="text-purple-600">📊 Multi-query - mixed results</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-11111</span>
+                         <span className="text-orange-600">🔧 Single query - needs fixing</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-22222</span>
+                         <span className="text-green-600">✅ Multi-query - all pass</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-33333</span>
+                         <span className="text-red-600">❌ Multi-query - all fail</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>HELIX-44444</span>
+                         <span className="text-yellow-600">⚡ Multi-query - mixed (pass/fail)</span>
+                       </div>
+                     </div>
+                   </div>
 
                   {ticketContent && (
                     <>
@@ -736,70 +1065,83 @@ Execution timestamp: ${new Date().toISOString()}`;
                   Step 3: Query Results
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="mb-4">
-                  <Badge 
-                    variant={evaluateCriteria().passed ? "default" : "destructive"}
-                    className="text-sm p-2"
-                  >
-                    {evaluateCriteria().passed ? '✅ Criteria Met' : '❌ Criteria Failed'}
-                  </Badge>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {evaluateCriteria().message}
-                  </p>
-                </div>
+               <CardContent>
+                 {(() => {
+                   const criteria = evaluateCriteria();
+                   return (criteria as any).queryEvaluations ? (
+                     <MultiQueryResults 
+                       ticketId={parsedTicket?.id || ''}
+                       queryEvaluations={(criteria as any).queryEvaluations}
+                       overallPassed={criteria.passed}
+                     />
+                   ) : (
+                   <>
+                     <div className="mb-4">
+                       <Badge 
+                         variant={evaluateCriteria().passed ? "default" : "destructive"}
+                         className="text-sm p-2"
+                       >
+                         {evaluateCriteria().passed ? '✅ Criteria Met' : '❌ Criteria Failed'}
+                       </Badge>
+                       <p className="text-sm text-gray-600 mt-2">
+                         {evaluateCriteria().message}
+                       </p>
+                     </div>
 
-                {/* Visual Criteria Indicators */}
-                <div className="mb-6">
-                  <h3 className="font-semibold mb-4 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    Criteria Visualization
-                  </h3>
-                  <SimpleCriteriaChart 
-                    rowCount={evaluateCriteria().rowCount} 
-                    maxSales={evaluateCriteria().maxSales}
-                    results={results}
-                  />
-                </div>
+                     {/* Visual Criteria Indicators */}
+                     <div className="mb-6">
+                       <h3 className="font-semibold mb-4 flex items-center gap-2">
+                         <BarChart3 className="w-5 h-5" />
+                         Criteria Visualization
+                       </h3>
+                       <SimpleCriteriaChart 
+                         rowCount={evaluateCriteria().rowCount} 
+                         maxSales={evaluateCriteria().maxSales}
+                         results={results}
+                       />
+                     </div>
 
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-2 border-b">
-                    <p className="font-semibold">Query Results ({results.length} rows)</p>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          {results.length > 0 && Object.keys(results[0]).map((key) => (
-                            <th key={key} className="text-left p-2 capitalize">
-                              {key.replace(/_/g, ' ')}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {results.slice(0, 10).map((row, i) => (
-                          <tr key={i} className="border-t">
-                            {Object.values(row).map((value, j) => (
-                              <td key={j} className="p-2">
-                                {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
-                                  ? `$${value.toLocaleString()}` 
-                                  : String(value)
-                                }
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {results.length > 10 && (
-                      <div className="p-2 text-center text-gray-500 border-t">
-                        ... and {results.length - 10} more rows
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
+                     <div className="border rounded-lg overflow-hidden">
+                       <div className="bg-gray-50 px-4 py-2 border-b">
+                         <p className="font-semibold">Query Results ({results.length} rows)</p>
+                       </div>
+                       <div className="max-h-64 overflow-y-auto">
+                         <table className="w-full text-sm">
+                           <thead className="bg-gray-100">
+                             <tr>
+                               {results.length > 0 && Object.keys(results[0]).map((key) => (
+                                 <th key={key} className="text-left p-2 capitalize">
+                                   {key.replace(/_/g, ' ')}
+                                 </th>
+                               ))}
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {results.slice(0, 10).map((row, i) => (
+                               <tr key={i} className="border-t">
+                                 {Object.values(row).map((value, j) => (
+                                   <td key={j} className="p-2">
+                                     {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
+                                       ? `$${value.toLocaleString()}` 
+                                       : String(value)
+                                     }
+                                   </td>
+                                 ))}
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                         {results.length > 10 && (
+                           <div className="p-2 text-center text-gray-500 border-t">
+                             ... and {results.length - 10} more rows
+                           </div>
+                         )}
+                       </div>
+                     </div>
+                    </>
+                  );
+                })()}
+               </CardContent>
             </Card>
 
             {/* Email and Helix Templates */}
