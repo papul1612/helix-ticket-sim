@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight, Wrench, BarChart3, FileStack } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +17,8 @@ interface ParsedTicket {
   criteria: string;
   isValid: boolean;
   isFixed?: boolean; // Track if SQL has been auto-fixed
+  sqlQueries?: string[]; // Support multiple SQL queries
+  description?: string;
 }
 
 interface QueryResult {
@@ -32,6 +35,8 @@ const Index = () => {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [isApiMode, setIsApiMode] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [helixTicketNumber, setHelixTicketNumber] = useState('');
+  const [isRetrievingTicket, setIsRetrievingTicket] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -55,6 +60,121 @@ AND region IN ('West', 'East')
 ORDER BY sales DESC
 \`\`\`
 Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
+
+  // Mock Helix tickets database with various scenarios
+  const mockHelixTickets: { [key: string]: any } = {
+    'HELIX-12345': {
+      id: 'HELIX-12345',
+      description: 'Execute monthly sales report for Q1 2024',
+      sql: `SELECT product_id, sales, region, date 
+FROM orders 
+WHERE date BETWEEN '2024-01-01' AND '2024-03-31' 
+AND region IN ('West', 'East')
+ORDER BY sales DESC;`,
+      criteria: 'ROWCOUNT > 100 AND MAX(sales) > 5000',
+      mockResults: Array(120).fill(null).map((_, i) => ({
+        product_id: `PROD-${1000 + i}`,
+        sales: Math.floor(Math.random() * 8000) + 1000,
+        region: i % 2 === 0 ? 'West' : 'East',
+        date: `2024-0${Math.floor(Math.random() * 3) + 1}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`
+      }))
+    },
+    'HELIX-54321': {
+      id: 'HELIX-54321',
+      description: 'Low inventory alert report - CRITERIA WILL FAIL',
+      sql: `SELECT product_id, inventory_count, warehouse_location 
+FROM inventory 
+WHERE inventory_count < 50 
+ORDER BY inventory_count ASC;`,
+      criteria: 'ROWCOUNT > 200 AND MIN(inventory_count) < 10',
+      mockResults: Array(45).fill(null).map((_, i) => ({
+        product_id: `PROD-${2000 + i}`,
+        inventory_count: Math.floor(Math.random() * 40) + 5,
+        warehouse_location: i % 3 === 0 ? 'Warehouse A' : i % 3 === 1 ? 'Warehouse B' : 'Warehouse C',
+      }))
+    },
+    'HELIX-98765': {
+      id: 'HELIX-98765',
+      description: 'Multi-query customer analysis report',
+      sqlQueries: [
+        `SELECT customer_id, total_orders, total_spent 
+FROM customer_summary 
+WHERE total_spent > 1000 
+ORDER BY total_spent DESC;`,
+        `SELECT region, COUNT(*) as customer_count, AVG(total_spent) as avg_spent
+FROM customer_summary 
+WHERE total_spent > 1000 
+GROUP BY region;`
+      ],
+      sql: `-- Query 1: High-value customers
+SELECT customer_id, total_orders, total_spent 
+FROM customer_summary 
+WHERE total_spent > 1000 
+ORDER BY total_spent DESC;
+
+-- Query 2: Regional analysis
+SELECT region, COUNT(*) as customer_count, AVG(total_spent) as avg_spent
+FROM customer_summary 
+WHERE total_spent > 1000 
+GROUP BY region;`,
+      criteria: 'ROWCOUNT > 50 AND AVG(total_spent) > 1500',
+      mockResults: Array(85).fill(null).map((_, i) => ({
+        customer_id: `CUST-${3000 + i}`,
+        total_orders: Math.floor(Math.random() * 50) + 5,
+        total_spent: Math.floor(Math.random() * 5000) + 1000,
+        region: i % 4 === 0 ? 'North' : i % 4 === 1 ? 'South' : i % 4 === 2 ? 'East' : 'West'
+      }))
+    },
+    'HELIX-11111': {
+      id: 'HELIX-11111',
+      description: 'SQL with syntax errors - needs auto-fix',
+      sql: `SELCT product_id, sales, region 
+FORM orders 
+WEHERE date BETWEN '2024-01-01' AND '2024-03-31' 
+AND region IN ('west', 'east')
+ORDR BY sales DESC`,
+      criteria: 'ROWCOUNT > 80 AND MAX(sales) > 3000',
+      mockResults: Array(95).fill(null).map((_, i) => ({
+        product_id: `PROD-${4000 + i}`,
+        sales: Math.floor(Math.random() * 6000) + 1000,
+        region: i % 2 === 0 ? 'West' : 'East',
+        date: `2024-0${Math.floor(Math.random() * 3) + 1}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`
+      }))
+    }
+  };
+
+  const retrieveHelixTicket = async (ticketNumber: string) => {
+    setIsRetrievingTicket(true);
+    
+    return new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        const ticket = mockHelixTickets[ticketNumber];
+        
+        if (ticket) {
+          setTicketContent(`Ticket #${ticket.id}
+Request: ${ticket.description}
+SQL: \`\`\`sql
+${ticket.sql}
+\`\`\`
+Success Criteria: ${ticket.criteria}`);
+          
+          toast({
+            title: "Ticket retrieved successfully",
+            description: `Helix ticket ${ticketNumber} has been loaded.`
+          });
+        } else {
+          toast({
+            title: "Ticket not found",
+            description: `Helix ticket ${ticketNumber} could not be found in the system.`,
+            variant: "destructive"
+          });
+        }
+        
+        setIsRetrievingTicket(false);
+        resolve();
+      }, 1500);
+    });
+  };
 
   const mockResults: QueryResult[] = Array(120).fill(null).map((_, i) => ({
     product_id: `PROD-${1000 + i}`,
@@ -128,11 +248,21 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     // Simulate query execution
     setTimeout(() => {
       try {
-        setResults(mockResults);
+        // Use ticket-specific mock results if available from Helix mode
+        let queryResults = mockResults; // Default results
+        
+        if (parsedTicket) {
+          const ticket = mockHelixTickets[parsedTicket.id];
+          if (ticket && ticket.mockResults) {
+            queryResults = ticket.mockResults;
+          }
+        }
+        
+        setResults(queryResults);
         setStep(3);
         toast({
           title: "Query executed",
-          description: `Query returned ${mockResults.length} rows successfully.`
+          description: `Query returned ${queryResults.length} rows successfully.`
         });
       } catch (error) {
         toast({
@@ -265,11 +395,58 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
   };
 
   const evaluateCriteria = () => {
-    if (!results.length) return { passed: false, message: "No results" };
+    if (!results.length) return { passed: false, message: "No results", rowCount: 0, maxSales: 0 };
     
     const rowCount = results.length;
-    const maxSales = Math.max(...results.map(r => r.sales));
     
+    // Handle different types of criteria based on the ticket
+    if (parsedTicket) {
+      const ticket = mockHelixTickets[parsedTicket.id];
+      
+      if (ticket) {
+        // Handle specific ticket criteria
+        if (parsedTicket.id === 'HELIX-54321') {
+          // Inventory ticket - ROWCOUNT > 200 AND MIN(inventory_count) < 10
+          const minInventory = Math.min(...results.map(r => (r as any).inventory_count || 0));
+          const rowCountPassed = rowCount > 200;
+          const minInventoryPassed = minInventory < 10;
+          
+          return {
+            passed: rowCountPassed && minInventoryPassed,
+            message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 200), MIN(inventory_count) = ${minInventory} (${minInventoryPassed ? '✅' : '❌'} < 10)`,
+            rowCount,
+            maxSales: 0
+          };
+        } else if (parsedTicket.id === 'HELIX-98765') {
+          // Customer analysis - ROWCOUNT > 50 AND AVG(total_spent) > 1500
+          const avgSpent = results.reduce((sum, r) => sum + ((r as any).total_spent || 0), 0) / results.length;
+          const rowCountPassed = rowCount > 50;
+          const avgSpentPassed = avgSpent > 1500;
+          
+          return {
+            passed: rowCountPassed && avgSpentPassed,
+            message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 50), AVG(total_spent) = ${avgSpent.toFixed(2)} (${avgSpentPassed ? '✅' : '❌'} > 1500)`,
+            rowCount,
+            maxSales: avgSpent
+          };
+        } else if (parsedTicket.id === 'HELIX-11111') {
+          // Fixed SQL ticket - ROWCOUNT > 80 AND MAX(sales) > 3000
+          const maxSales = Math.max(...results.map(r => r.sales || 0));
+          const rowCountPassed = rowCount > 80;
+          const maxSalesPassed = maxSales > 3000;
+          
+          return {
+            passed: rowCountPassed && maxSalesPassed,
+            message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 80), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 3000)`,
+            rowCount,
+            maxSales
+          };
+        }
+      }
+    }
+    
+    // Default criteria - ROWCOUNT > 100 AND MAX(sales) > 5000
+    const maxSales = Math.max(...results.map(r => r.sales || 0));
     const rowCountPassed = rowCount > 100;
     const maxSalesPassed = maxSales > 5000;
     
@@ -401,19 +578,85 @@ Execution timestamp: ${new Date().toISOString()}`;
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Textarea
-                placeholder="Paste your Helix ticket content here..."
-                value={ticketContent}
-                onChange={(e) => setTicketContent(e.target.value)}
-                className="min-h-[200px] font-mono text-sm"
-              />
-              <Button
-                onClick={handleParseTicket}
-                disabled={!ticketContent.trim()}
-                className="w-full bg-indigo-500 hover:bg-indigo-600"
-              >
-                Parse Ticket & Extract SQL
-              </Button>
+              {!isApiMode ? (
+                // Manual paste mode
+                <>
+                  <Textarea
+                    placeholder="Paste your Helix ticket content here..."
+                    value={ticketContent}
+                    onChange={(e) => setTicketContent(e.target.value)}
+                    className="min-h-[200px] font-mono text-sm"
+                  />
+                  <Button
+                    onClick={handleParseTicket}
+                    disabled={!ticketContent.trim()}
+                    className="w-full bg-indigo-500 hover:bg-indigo-600"
+                  >
+                    Parse Ticket & Extract SQL
+                  </Button>
+                </>
+              ) : (
+                // Helix API mode
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Helix Ticket Number</label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Enter ticket number (e.g., HELIX-12345)"
+                        value={helixTicketNumber}
+                        onChange={(e) => setHelixTicketNumber(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => retrieveHelixTicket(helixTicketNumber)}
+                        disabled={!helixTicketNumber.trim() || isRetrievingTicket}
+                        className="bg-blue-500 hover:bg-blue-600"
+                      >
+                        {isRetrievingTicket ? 'Retrieving...' : 'Retrieve'}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-blue-900 mb-2">Available Test Tickets:</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>HELIX-12345</span>
+                        <span className="text-blue-600">✅ Criteria will pass</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>HELIX-54321</span>
+                        <span className="text-red-600">❌ Criteria will fail</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>HELIX-98765</span>
+                        <span className="text-purple-600">📊 Multiple SQL queries</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>HELIX-11111</span>
+                        <span className="text-orange-600">🔧 SQL needs fixing</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {ticketContent && (
+                    <>
+                      <Textarea
+                        value={ticketContent}
+                        onChange={(e) => setTicketContent(e.target.value)}
+                        className="min-h-[200px] font-mono text-sm bg-gray-50"
+                        readOnly
+                      />
+                      <Button
+                        onClick={handleParseTicket}
+                        className="w-full bg-indigo-500 hover:bg-indigo-600"
+                      >
+                        Parse Retrieved Ticket & Extract SQL
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -527,19 +770,24 @@ Execution timestamp: ${new Date().toISOString()}`;
                     <table className="w-full text-sm">
                       <thead className="bg-gray-100">
                         <tr>
-                          <th className="text-left p-2">Product ID</th>
-                          <th className="text-left p-2">Sales</th>
-                          <th className="text-left p-2">Region</th>
-                          <th className="text-left p-2">Date</th>
+                          {results.length > 0 && Object.keys(results[0]).map((key) => (
+                            <th key={key} className="text-left p-2 capitalize">
+                              {key.replace(/_/g, ' ')}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
                         {results.slice(0, 10).map((row, i) => (
                           <tr key={i} className="border-t">
-                            <td className="p-2">{row.product_id}</td>
-                            <td className="p-2">${row.sales.toLocaleString()}</td>
-                            <td className="p-2">{row.region}</td>
-                            <td className="p-2">{row.date}</td>
+                            {Object.values(row).map((value, j) => (
+                              <td key={j} className="p-2">
+                                {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
+                                  ? `$${value.toLocaleString()}` 
+                                  : String(value)
+                                }
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
