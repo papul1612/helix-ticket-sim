@@ -123,6 +123,26 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     return issues;
   };
 
+  const executeQueryAfterValidation = () => {
+    // Simulate query execution
+    setTimeout(() => {
+      try {
+        setResults(mockResults);
+        setStep(3);
+        toast({
+          title: "Query executed",
+          description: `Query returned ${mockResults.length} rows successfully.`
+        });
+      } catch (error) {
+        toast({
+          title: "Execution failed",
+          description: "An error occurred while executing the query.",
+          variant: "destructive"
+        });
+      }
+    }, 1000);
+  };
+
   const handleExecuteQuery = () => {
     if (!parsedTicket) return;
     
@@ -139,49 +159,124 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
       return;
     }
     
-    // Simulate query execution
-    setTimeout(() => {
-      try {
-        setResults(mockResults);
-        setStep(3);
-        toast({
-          title: "Query executed",
-          description: `Query returned ${mockResults.length} rows successfully.`
-        });
-      } catch (error) {
-        setErrorDialog({
-          isOpen: true,
-          title: 'Query Execution Failed',
-          description: 'An error occurred while executing the query. Please check your SQL and try again.',
-          showFixButton: true
-        });
-      }
-    }, 1000);
+    executeQueryAfterValidation();
   };
 
   const handleSqlFixed = (fixedSql: string) => {
     if (parsedTicket) {
-      setParsedTicket({
+      const updatedTicket = {
         ...parsedTicket,
         sql: fixedSql
-      });
+      };
+      setParsedTicket(updatedTicket);
+      
+      // Close the error dialog
       setErrorDialog({ ...errorDialog, isOpen: false });
-      toast({
-        title: "SQL fixed",
-        description: "The SQL has been automatically corrected."
-      });
+      
+      // Re-validate the fixed SQL and proceed if valid
+      const sqlIssues = simulateSqlValidation(fixedSql);
+      
+      if (sqlIssues.length === 0) {
+        // If no issues after fixing, execute the query automatically
+        executeQueryAfterValidation();
+        toast({
+          title: "SQL fixed and executed",
+          description: "The SQL has been automatically corrected and executed."
+        });
+      } else {
+        // If still issues, show them
+        setErrorDialog({
+          isOpen: true,
+          title: 'Additional SQL Issues Found',
+          description: `The following issues still remain:\n• ${sqlIssues.join('\n• ')}\n\nPlease review the SQL manually.`,
+          showFixButton: false
+        });
+      }
     }
   };
 
   const handleErrorDialogFixClick = () => {
     if (parsedTicket) {
-      // Trigger the SQL fix functionality
-      const fixButton = document.querySelector('[data-testid="sql-fix-button"]') as HTMLButtonElement;
-      if (fixButton) {
-        fixButton.click();
-      }
+      // Close dialog first to prevent re-triggering
+      setErrorDialog({ ...errorDialog, isOpen: false });
+      
+      // Simulate the SQL fix process
+      setTimeout(async () => {
+        try {
+          // Mock SQL fixes - in real implementation, this would call an AI API
+          const commonFixes = [
+            {
+              pattern: /SELCT/gi,
+              replacement: 'SELECT'
+            },
+            {
+              pattern: /FORM/gi,
+              replacement: 'FROM'
+            },
+            {
+              pattern: /WEHERE/gi,
+              replacement: 'WHERE'
+            },
+            {
+              pattern: /GROPU BY/gi,
+              replacement: 'GROUP BY'
+            },
+            {
+              pattern: /ORDR BY/gi,
+              replacement: 'ORDER BY'
+            }
+          ];
+
+          let fixedSql = parsedTicket.sql;
+          let hasChanges = false;
+
+          commonFixes.forEach(fix => {
+            if (fix.pattern.test(fixedSql)) {
+              fixedSql = fixedSql.replace(fix.pattern, fix.replacement);
+              hasChanges = true;
+            }
+          });
+
+          // Add missing semicolons
+          if (!fixedSql.trim().endsWith(';')) {
+            fixedSql = fixedSql.trim() + ';';
+            hasChanges = true;
+          }
+
+          // Add LIMIT clause if missing
+          if (!fixedSql.includes('LIMIT') && !fixedSql.includes('TOP')) {
+            fixedSql = fixedSql.replace(/ORDER BY[^;]*/, '$& LIMIT 1000');
+            hasChanges = true;
+          }
+
+          // Format SQL for better readability
+          if (!hasChanges) {
+            // If no syntax errors found, apply formatting improvements
+            fixedSql = fixedSql
+              .replace(/\s+/g, ' ')
+              .replace(/,\s*/g, ',\n  ')
+              .replace(/\bFROM\b/gi, '\nFROM')
+              .replace(/\bWHERE\b/gi, '\nWHERE')
+              .replace(/\bAND\b/gi, '\n  AND')
+              .replace(/\bOR\b/gi, '\n  OR')
+              .replace(/\bORDER BY\b/gi, '\nORDER BY')
+              .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
+              .trim();
+            hasChanges = true;
+          }
+
+          // Apply the fix
+          handleSqlFixed(fixedSql);
+          
+        } catch (error) {
+          toast({
+            title: "Fix Failed",
+            description: "Unable to fix SQL. Please check manually.",
+            variant: "destructive"
+          });
+        }
+      }, 500);
     }
-    setErrorDialog({ ...errorDialog, isOpen: false });
   };
 
   const evaluateCriteria = () => {
@@ -351,11 +446,7 @@ Execution timestamp: ${new Date().toISOString()}`;
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold">Extracted SQL:</h3>
-                  <SqlFixButton 
-                    sql={parsedTicket.sql} 
-                    onSqlFixed={handleSqlFixed}
-                    data-testid="sql-fix-button"
-                  />
+                  <SqlFixButton sql={parsedTicket.sql} onSqlFixed={handleSqlFixed} />
                 </div>
                 <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
                   {parsedTicket.sql}
