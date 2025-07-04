@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight, Wrench, BarChart3, FileStack } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SqlFixButton } from '@/components/SqlFixButton';
-import { CriteriaChart } from '@/components/CriteriaChart';
+import { SimpleCriteriaChart } from '@/components/SimpleCriteriaChart';
 import { BatchProcessor } from '@/components/BatchProcessor';
+import { ErrorDialog } from '@/components/ErrorDialog';
 
 interface ParsedTicket {
   id: string;
@@ -30,6 +31,17 @@ const Index = () => {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [isApiMode, setIsApiMode] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [errorDialog, setErrorDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    showFixButton: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    showFixButton: false
+  });
   const { toast } = useToast();
 
   const mockTicketExample = `Ticket #HELIX-12345
@@ -87,15 +99,63 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     }, 500);
   };
 
+  const simulateSqlValidation = (sql: string) => {
+    // Check for common SQL issues
+    const issues = [];
+    
+    if (sql.includes('DROP') || sql.includes('DELETE') || sql.includes('UPDATE')) {
+      issues.push('Potentially dangerous SQL operations detected');
+    }
+    
+    if (!sql.includes('LIMIT') && !sql.includes('TOP')) {
+      issues.push('No row limit specified - query might return too many rows');
+    }
+    
+    if (sql.includes('SELECT *')) {
+      issues.push('Using SELECT * might impact performance');
+    }
+    
+    // Simulate syntax errors
+    if (sql.includes('SELCT') || sql.includes('FORM') || sql.includes('WEHERE')) {
+      issues.push('SQL syntax errors detected');
+    }
+    
+    return issues;
+  };
+
   const handleExecuteQuery = () => {
+    if (!parsedTicket) return;
+    
+    // Validate SQL before execution
+    const sqlIssues = simulateSqlValidation(parsedTicket.sql);
+    
+    if (sqlIssues.length > 0) {
+      setErrorDialog({
+        isOpen: true,
+        title: 'SQL Validation Issues',
+        description: `The following issues were found:\n• ${sqlIssues.join('\n• ')}\n\nWould you like to fix these issues automatically?`,
+        showFixButton: true
+      });
+      return;
+    }
+    
     // Simulate query execution
     setTimeout(() => {
-      setResults(mockResults);
-      setStep(3);
-      toast({
-        title: "Query executed",
-        description: `Query returned ${mockResults.length} rows successfully.`
-      });
+      try {
+        setResults(mockResults);
+        setStep(3);
+        toast({
+          title: "Query executed",
+          description: `Query returned ${mockResults.length} rows successfully.`
+        });
+      } catch (error) {
+        setErrorDialog({
+          isOpen: true,
+          title: 'Query Execution Failed',
+          description: 'An error occurred while executing the query. Please check your SQL and try again.',
+          showFixButton: true
+        });
+      }
     }, 1000);
   };
 
@@ -105,11 +165,23 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
         ...parsedTicket,
         sql: fixedSql
       });
+      setErrorDialog({ ...errorDialog, isOpen: false });
       toast({
         title: "SQL fixed",
         description: "The SQL has been automatically corrected."
       });
     }
+  };
+
+  const handleErrorDialogFixClick = () => {
+    if (parsedTicket) {
+      // Trigger the SQL fix functionality
+      const fixButton = document.querySelector('[data-testid="sql-fix-button"]') as HTMLButtonElement;
+      if (fixButton) {
+        fixButton.click();
+      }
+    }
+    setErrorDialog({ ...errorDialog, isOpen: false });
   };
 
   const evaluateCriteria = () => {
@@ -282,6 +354,7 @@ Execution timestamp: ${new Date().toISOString()}`;
                   <SqlFixButton 
                     sql={parsedTicket.sql} 
                     onSqlFixed={handleSqlFixed}
+                    data-testid="sql-fix-button"
                   />
                 </div>
                 <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
@@ -353,7 +426,7 @@ Execution timestamp: ${new Date().toISOString()}`;
                     <BarChart3 className="w-5 h-5" />
                     Criteria Visualization
                   </h3>
-                  <CriteriaChart 
+                  <SimpleCriteriaChart 
                     rowCount={evaluateCriteria().rowCount} 
                     maxSales={evaluateCriteria().maxSales}
                     results={results}
@@ -458,6 +531,16 @@ Execution timestamp: ${new Date().toISOString()}`;
             </div>
           </div>
         )}
+
+        {/* Error Dialog */}
+        <ErrorDialog
+          isOpen={errorDialog.isOpen}
+          onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
+          title={errorDialog.title}
+          description={errorDialog.description}
+          showFixButton={errorDialog.showFixButton}
+          onFixClick={handleErrorDialogFixClick}
+        />
       </div>
     </div>
   );
