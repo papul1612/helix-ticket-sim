@@ -112,12 +112,14 @@ const mockAIFixSQL = (sql: string): Promise<string> => {
         fixedSql = fixedSql.trim() + ';';
       }
 
-      // Format SQL
+      // Format SQL - minimal formatting, only where needed
       fixedSql = fixedSql
+        .replace(/\s+/g, ' ') // Normalize whitespace first
         .replace(/\bFROM\b/gi, '\nFROM')
         .replace(/\bWHERE\b/gi, '\nWHERE')
-        .replace(/\b(AND|OR)\b/gi, '\n  $1')
-        .replace(/\b(ORDER BY|GROUP BY)\b/gi, '\n$1');
+        .replace(/\bORDER BY\b/gi, '\nORDER BY')
+        .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
+        .trim();
 
       resolve(fixedSql);
     }, 800);

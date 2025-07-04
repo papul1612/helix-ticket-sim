@@ -250,12 +250,14 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
           fixedSql = fixedSql.trim() + ';';
         }
 
-        // Format SQL
+        // Format SQL - minimal formatting, only where needed
         fixedSql = fixedSql
+          .replace(/\s+/g, ' ') // Normalize whitespace first
           .replace(/\bFROM\b/gi, '\nFROM')
           .replace(/\bWHERE\b/gi, '\nWHERE')
-          .replace(/\b(AND|OR)\b/gi, '\n  $1')
-          .replace(/\b(ORDER BY|GROUP BY)\b/gi, '\n$1');
+          .replace(/\bORDER BY\b/gi, '\nORDER BY')
+          .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
+          .trim();
 
         resolve(fixedSql);
       }, 800);
@@ -431,9 +433,19 @@ Execution timestamp: ${new Date().toISOString()}`;
                   <h3 className="font-semibold">Extracted SQL:</h3>
                   <SqlFixButton sql={parsedTicket.sql} onSqlFixed={handleSqlFixed} />
                 </div>
-                <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
-                  {parsedTicket.sql}
-                </pre>
+                <Textarea
+                  value={parsedTicket.sql}
+                  onChange={(e) => {
+                    const updatedTicket = {
+                      ...parsedTicket,
+                      sql: e.target.value,
+                      isFixed: false // Reset fix status when manually edited
+                    };
+                    setParsedTicket(updatedTicket);
+                  }}
+                  className="bg-gray-900 text-green-400 font-mono text-sm min-h-[120px] resize-none"
+                  placeholder="SQL query..."
+                />
               </div>
               
               <div>
