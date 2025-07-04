@@ -15,6 +15,7 @@ interface ParsedTicket {
   sql: string;
   criteria: string;
   isValid: boolean;
+  isFixed?: boolean; // Track if SQL has been auto-fixed
 }
 
 interface QueryResult {
@@ -146,6 +147,12 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
   const handleExecuteQuery = () => {
     if (!parsedTicket) return;
     
+    // Skip validation for previously fixed SQL
+    if (parsedTicket.isFixed) {
+      executeQueryAfterValidation();
+      return;
+    }
+    
     // Validate SQL before execution
     const sqlIssues = simulateSqlValidation(parsedTicket.sql);
     
@@ -166,32 +173,19 @@ Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
     if (parsedTicket) {
       const updatedTicket = {
         ...parsedTicket,
-        sql: fixedSql
+        sql: fixedSql,
+        isFixed: true // Mark as fixed to skip validation
       };
       setParsedTicket(updatedTicket);
       
       // Close the error dialog
       setErrorDialog({ ...errorDialog, isOpen: false });
       
-      // Re-validate the fixed SQL and proceed if valid
-      const sqlIssues = simulateSqlValidation(fixedSql);
-      
-      if (sqlIssues.length === 0) {
-        // If no issues after fixing, execute the query automatically
-        executeQueryAfterValidation();
-        toast({
-          title: "SQL fixed and executed",
-          description: "The SQL has been automatically corrected and executed."
-        });
-      } else {
-        // If still issues, show them
-        setErrorDialog({
-          isOpen: true,
-          title: 'Additional SQL Issues Found',
-          description: `The following issues still remain:\n• ${sqlIssues.join('\n• ')}\n\nPlease review the SQL manually.`,
-          showFixButton: false
-        });
-      }
+      // Show success message and let user manually execute
+      toast({
+        title: "SQL Fixed",
+        description: "SQL has been corrected. Review the changes and click 'Execute Query' to proceed."
+      });
     }
   };
 
