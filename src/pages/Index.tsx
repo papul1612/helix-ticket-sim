@@ -58,7 +58,7 @@ SELECT product_id, sales, region, date
 FROM orders 
 WHERE date BETWEEN '2024-01-01' AND '2024-03-31' 
 AND region IN ('West', 'East')
-ORDER BY sales DESC
+ORDER BY sales DESC;
 \`\`\`
 Success Criteria: ROWCOUNT > 100 AND MAX(sales) > 5000`;
 
@@ -92,38 +92,6 @@ ORDER BY inventory_count ASC;`,
         product_id: `PROD-${2000 + i}`,
         inventory_count: Math.floor(Math.random() * 40) + 5,
         warehouse_location: i % 3 === 0 ? 'Warehouse A' : i % 3 === 1 ? 'Warehouse B' : 'Warehouse C',
-      }))
-    },
-    'HELIX-98765': {
-      id: 'HELIX-98765',
-      description: 'Multi-query customer analysis report',
-      sqlQueries: [
-        `SELECT customer_id, total_orders, total_spent 
-FROM customer_summary 
-WHERE total_spent > 1000 
-ORDER BY total_spent DESC;`,
-        `SELECT region, COUNT(*) as customer_count, AVG(total_spent) as avg_spent
-FROM customer_summary 
-WHERE total_spent > 1000 
-GROUP BY region;`
-      ],
-      sql: `-- Query 1: High-value customers
-SELECT customer_id, total_orders, total_spent 
-FROM customer_summary 
-WHERE total_spent > 1000 
-ORDER BY total_spent DESC;
-
--- Query 2: Regional analysis
-SELECT region, COUNT(*) as customer_count, AVG(total_spent) as avg_spent
-FROM customer_summary 
-WHERE total_spent > 1000 
-GROUP BY region;`,
-      criteria: 'ROWCOUNT > 50 AND AVG(total_spent) > 1500',
-      mockResults: Array(85).fill(null).map((_, i) => ({
-        customer_id: `CUST-${3000 + i}`,
-        total_orders: Math.floor(Math.random() * 50) + 5,
-        total_spent: Math.floor(Math.random() * 5000) + 1000,
-        region: i % 4 === 0 ? 'North' : i % 4 === 1 ? 'South' : i % 4 === 2 ? 'East' : 'West'
       }))
     },
     'HELIX-11111': {
@@ -263,7 +231,7 @@ FROM products
 WHERE sales > 1500 
 ORDER BY sales DESC;
 
--- Query 2: Store performance (WILL FAIL)
+-- Query 2: Store performance (WILL FAIL)  
 SELECT store_id, revenue, employees
 FROM stores 
 WHERE revenue > 50000;
@@ -273,6 +241,7 @@ SELECT campaign_id, clicks, conversions
 FROM marketing_campaigns 
 WHERE clicks > 100;`,
       criteria: 'Query 1: ROWCOUNT > 40 AND MAX(sales) > 4000; Query 2: ROWCOUNT > 50 AND AVG(revenue) > 75000; Query 3: ROWCOUNT > 25 AND MAX(clicks) > 500',
+      isFixed: true, // Mark as already fixed so it runs directly
       mockResults: {
         query1: Array(60).fill(null).map((_, i) => ({
           product_id: `PROD-${9000 + i}`,
