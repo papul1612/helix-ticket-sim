@@ -404,8 +404,19 @@ Success Criteria: ${ticket.criteria}`);
         if (parsedTicket) {
           const ticket = mockHelixTickets[parsedTicket.id];
           if (ticket && ticket.mockResults) {
-            queryResults = ticket.mockResults;
+            // For multi-query tickets, use the first query results as the main results
+            // The MultiQueryResults component will handle displaying all query results
+            if (typeof ticket.mockResults === 'object' && !Array.isArray(ticket.mockResults)) {
+              queryResults = ticket.mockResults.query1 || [];
+            } else {
+              queryResults = ticket.mockResults;
+            }
           }
+        }
+        
+        // Ensure queryResults is always an array
+        if (!Array.isArray(queryResults)) {
+          queryResults = [];
         }
         
         setResults(queryResults);
@@ -530,14 +541,23 @@ Success Criteria: ${ticket.criteria}`);
           fixedSql = fixedSql.trim() + ';';
         }
 
-        // Format SQL - minimal formatting, only where needed
-        fixedSql = fixedSql
-          .replace(/\s+/g, ' ') // Normalize whitespace first
-          .replace(/\bFROM\b/gi, '\nFROM')
-          .replace(/\bWHERE\b/gi, '\nWHERE')
-          .replace(/\bORDER BY\b/gi, '\nORDER BY')
-          .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
-          .trim();
+        // Format SQL - handle multi-query SQL with proper spacing
+        if (fixedSql.includes('-- Query')) {
+          // For multi-query SQL, ensure proper spacing between queries
+          fixedSql = fixedSql
+            .replace(/;\s*--\s*Query/g, ';\n\n-- Query')
+            .replace(/\n\s*\n\s*\n/g, '\n\n') // Remove excessive newlines
+            .trim();
+        } else {
+          // Format single SQL - minimal formatting, only where needed
+          fixedSql = fixedSql
+            .replace(/\s+/g, ' ') // Normalize whitespace first
+            .replace(/\bFROM\b/gi, '\nFROM')
+            .replace(/\bWHERE\b/gi, '\nWHERE')
+            .replace(/\bORDER BY\b/gi, '\nORDER BY')
+            .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
+            .trim();
+        }
 
         resolve(fixedSql);
       }, 800);
@@ -777,6 +797,33 @@ Success Criteria: ${ticket.criteria}`);
 
   const generateEmailTemplate = () => {
     const evaluation = evaluateCriteria();
+    const isMultiQuery = (evaluation as any).queryEvaluations;
+    
+    if (isMultiQuery) {
+      const queryEvals = (evaluation as any).queryEvaluations;
+      const passedQueries = queryEvals.filter(q => q.passed).length;
+      const totalQueries = queryEvals.length;
+      
+      return `Subject: Multi-Query Results for ${parsedTicket?.id || 'HELIX-XXXXX'}
+
+Dear Requester,
+
+Your multi-query SQL request has been executed with the following results:
+
+Overall Status: ${evaluation.passed ? 'ALL QUERIES PASSED' : 'SOME QUERIES FAILED'}
+Query Summary: ${passedQueries} of ${totalQueries} queries passed
+
+${queryEvals.map(q => 
+  `Query ${q.queryNumber}: ${q.passed ? 'PASSED' : 'FAILED'} (${q.rowCount} rows)
+  Details: ${q.message}`
+).join('\n\n')}
+
+Please find the detailed results attached or contact us if you need the data in a different format.
+
+Best regards,
+Database Team`;
+    }
+    
     return `Subject: Results for ${parsedTicket?.id || 'HELIX-XXXXX'}
 
 Dear Requester,
@@ -795,6 +842,23 @@ Database Team`;
 
   const generateHelixReply = () => {
     const evaluation = evaluateCriteria();
+    const isMultiQuery = (evaluation as any).queryEvaluations;
+    
+    if (isMultiQuery) {
+      const queryEvals = (evaluation as any).queryEvaluations;
+      const passedQueries = queryEvals.filter(q => q.passed).length;
+      const totalQueries = queryEvals.length;
+      
+      return `[Automated Response]
+Ticket: ${parsedTicket?.id || 'HELIX-XXXXX'}
+Status: COMPLETED
+Multi-query execution completed.
+Overall Result: ${evaluation.passed ? 'ALL QUERIES PASSED' : 'SOME QUERIES FAILED'}
+Query Results: ${passedQueries}/${totalQueries} queries passed
+${queryEvals.map(q => `Query ${q.queryNumber}: ${q.passed ? 'PASS' : 'FAIL'} (${q.rowCount} rows)`).join('\n')}
+Execution timestamp: ${new Date().toISOString()}`;
+    }
+    
     return `[Automated Response]
 Ticket: ${parsedTicket?.id || 'HELIX-XXXXX'}
 Status: COMPLETED
@@ -1015,7 +1079,7 @@ Execution timestamp: ${new Date().toISOString()}`;
                     };
                     setParsedTicket(updatedTicket);
                   }}
-                  className="bg-gray-900 text-green-400 font-mono text-sm min-h-[120px] resize-none"
+                  className="bg-gray-900 text-green-400 font-mono text-sm min-h-[200px] resize-y"
                   placeholder="SQL query..."
                 />
               </div>
