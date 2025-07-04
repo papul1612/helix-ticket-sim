@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight, Wrench, BarChart3, FileStack } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CheckCircle, XCircle, Database, Mail, Copy, Clipboard, ArrowRight, Wrench, BarChart3, FileStack, Maximize, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SqlFixButton } from '@/components/SqlFixButton';
 import { SimpleCriteriaChart } from '@/components/SimpleCriteriaChart';
@@ -38,6 +39,7 @@ const Index = () => {
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [helixTicketNumber, setHelixTicketNumber] = useState('');
   const [isRetrievingTicket, setIsRetrievingTicket] = useState(false);
+  const [showFullViewEditor, setShowFullViewEditor] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -846,6 +848,63 @@ Execution timestamp: ${new Date().toISOString()}`;
     });
   };
 
+  const downloadResults = (filename: string = 'query_results.json') => {
+    const evaluation = evaluateCriteria();
+    const isMultiQuery = (evaluation as any).queryEvaluations;
+    
+    let dataToDownload;
+    
+    if (isMultiQuery) {
+      dataToDownload = {
+        ticketId: parsedTicket?.id || 'UNKNOWN',
+        timestamp: new Date().toISOString(),
+        overallResult: evaluation.passed ? 'PASSED' : 'FAILED',
+        queryResults: (evaluation as any).queryEvaluations.map((qEval, index) => ({
+          queryNumber: qEval.queryNumber,
+          passed: qEval.passed,
+          message: qEval.message,
+          rowCount: qEval.rowCount,
+          results: qEval.results
+        }))
+      };
+    } else {
+      dataToDownload = {
+        ticketId: parsedTicket?.id || 'UNKNOWN',
+        timestamp: new Date().toISOString(),
+        result: evaluation.passed ? 'PASSED' : 'FAILED',
+        message: evaluation.message,
+        rowCount: results.length,
+        results: results
+      };
+    }
+    
+    const blob = new Blob([JSON.stringify(dataToDownload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Results downloaded",
+      description: `Query results saved as ${filename}`
+    });
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    // Allow navigation based on current progress
+    if (targetStep === 1) {
+      setStep(1);
+    } else if (targetStep === 2 && parsedTicket) {
+      setStep(2);
+    } else if (targetStep === 3 && parsedTicket && results.length > 0) {
+      setStep(3);
+    }
+  };
+
   if (isBatchMode) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
@@ -867,16 +926,6 @@ Execution timestamp: ${new Date().toISOString()}`;
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">SQL Ticket Workflow</h1>
           <p className="text-xl text-gray-600">Automated SQL execution and validation system</p>
-          <div className="flex justify-center gap-4 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setIsBatchMode(true)}
-              className="flex items-center gap-2"
-            >
-              <FileStack className="w-4 h-4" />
-              Batch Processing
-            </Button>
-          </div>
         </div>
 
         {/* Progress Steps */}
@@ -884,13 +933,26 @@ Execution timestamp: ${new Date().toISOString()}`;
           <div className="flex items-center space-x-4">
             {[1, 2, 3].map((stepNum) => (
               <div key={stepNum} className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                  step >= stepNum 
-                    ? 'bg-indigo-500 text-white' 
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
+                <button
+                  onClick={() => handleStepClick(stepNum)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all duration-200 ${
+                    step >= stepNum 
+                      ? 'bg-indigo-500 text-white hover:bg-indigo-600' 
+                      : stepNum === 2 && parsedTicket
+                        ? 'bg-gray-300 text-gray-600 hover:bg-gray-400 cursor-pointer'
+                        : stepNum === 3 && parsedTicket && results.length > 0
+                          ? 'bg-gray-300 text-gray-600 hover:bg-gray-400 cursor-pointer'
+                          : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  }`}
+                  disabled={
+                    stepNum === 1 ? false :
+                    stepNum === 2 ? !parsedTicket :
+                    stepNum === 3 ? !parsedTicket || results.length === 0 :
+                    true
+                  }
+                >
                   {stepNum}
-                </div>
+                </button>
                 {stepNum < 3 && (
                   <ArrowRight className={`w-6 h-6 mx-2 ${
                     step > stepNum ? 'text-indigo-500' : 'text-gray-300'
@@ -967,39 +1029,35 @@ Execution timestamp: ${new Date().toISOString()}`;
                     </div>
                   </div>
                   
-                   <div className="bg-blue-50 p-4 rounded-lg">
-                     <h4 className="font-semibold text-blue-900 mb-2">Available Test Tickets:</h4>
-                     <div className="space-y-2 text-sm">
-                       <div className="flex justify-between">
-                         <span>HELIX-12345</span>
-                         <span className="text-blue-600">✅ Single query - will pass</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-54321</span>
-                         <span className="text-red-600">❌ Single query - will fail</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-98765</span>
-                         <span className="text-purple-600">📊 Multi-query - mixed results</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-11111</span>
-                         <span className="text-orange-600">🔧 Single query - needs fixing</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-22222</span>
-                         <span className="text-green-600">✅ Multi-query - all pass</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-33333</span>
-                         <span className="text-red-600">❌ Multi-query - all fail</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span>HELIX-44444</span>
-                         <span className="text-yellow-600">⚡ Multi-query - mixed (pass/fail)</span>
-                       </div>
-                     </div>
-                   </div>
+                     <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-blue-900 mb-2">Available Test Tickets:</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>HELIX-12345</span>
+                          <span className="text-blue-600">✅ Single query - will pass</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>HELIX-54321</span>
+                          <span className="text-red-600">❌ Single query - will fail</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>HELIX-11111</span>
+                          <span className="text-orange-600">🔧 Single query - needs fixing</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>HELIX-22222</span>
+                          <span className="text-green-600">✅ Multi-query - all pass</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>HELIX-33333</span>
+                          <span className="text-red-600">❌ Multi-query - all fail</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>HELIX-44444</span>
+                          <span className="text-yellow-600">⚡ Multi-query - mixed (pass/fail)</span>
+                        </div>
+                      </div>
+                    </div>
 
                   {ticketContent && (
                     <>
@@ -1031,12 +1089,33 @@ Execution timestamp: ${new Date().toISOString()}`;
                 <CheckCircle className="w-6 h-6" />
                 Step 2: SQL Validation
               </CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  variant={isApiMode ? "default" : "outline"}
+                  onClick={() => setIsApiMode(!isApiMode)}
+                  className="text-sm"
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  {isApiMode ? "API Connected" : "Paste Mode"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold">Extracted SQL:</h3>
-                  <SqlFixButton sql={parsedTicket.sql} onSqlFixed={handleSqlFixed} />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowFullViewEditor(true)}
+                      className="flex items-center gap-1"
+                    >
+                      <Maximize className="w-4 h-4" />
+                      Full View
+                    </Button>
+                    <SqlFixButton sql={parsedTicket.sql} onSqlFixed={handleSqlFixed} />
+                  </div>
                 </div>
                 <Textarea
                   value={parsedTicket.sql}
@@ -1093,9 +1172,30 @@ Execution timestamp: ${new Date().toISOString()}`;
           <div className="space-y-6">
             <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="w-6 h-6" />
-                  Step 3: Query Results
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-6 h-6" />
+                    Step 3: Query Results
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={isApiMode ? "default" : "outline"}
+                      onClick={() => setIsApiMode(!isApiMode)}
+                      className="text-sm"
+                    >
+                      <Database className="w-4 h-4 mr-2" />
+                      {isApiMode ? "API Connected" : "Paste Mode"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadResults(`${parsedTicket?.id || 'query'}_results.json`)}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Results
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
                <CardContent>
@@ -1240,6 +1340,57 @@ Execution timestamp: ${new Date().toISOString()}`;
             </div>
           </div>
         )}
+
+        {/* Full View SQL Editor Dialog */}
+        <Dialog open={showFullViewEditor} onOpenChange={setShowFullViewEditor}>
+          <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5" />
+                SQL Editor - Full View
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 space-y-4">
+              <div className="flex-1">
+                <Textarea
+                  value={parsedTicket?.sql || ''}
+                  onChange={(e) => {
+                    if (parsedTicket) {
+                      const updatedTicket = {
+                        ...parsedTicket,
+                        sql: e.target.value,
+                        isFixed: false
+                      };
+                      setParsedTicket(updatedTicket);
+                    }
+                  }}
+                  className="bg-gray-900 text-green-400 font-mono text-sm h-full min-h-[400px] resize-none"
+                  placeholder="SQL query..."
+                />
+              </div>
+              <div className="flex justify-between items-center pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Success Criteria:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {parsedTicket?.criteria}
+                  </Badge>
+                </div>
+                <div className="flex gap-2">
+                  <SqlFixButton 
+                    sql={parsedTicket?.sql || ''} 
+                    onSqlFixed={handleSqlFixed} 
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowFullViewEditor(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Error Dialog */}
         <ErrorDialog
