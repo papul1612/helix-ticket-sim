@@ -13,6 +13,20 @@ import { BatchProcessor } from '@/components/BatchProcessor';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { MultiQueryResults } from '@/components/MultiQueryResults';
 
+interface ProcessedTicket {
+  id: string;
+  sql: string;
+  criteria: string;
+  results: any[];
+  evaluation: {
+    passed: boolean;
+    message: string;
+    rowCount: number;
+    queryEvaluations?: any[];
+  };
+  isMultiQuery: boolean;
+}
+
 interface ParsedTicket {
   id: string;
   sql: string;
@@ -35,6 +49,7 @@ const Index = () => {
   const [ticketContent, setTicketContent] = useState('');
   const [parsedTicket, setParsedTicket] = useState<ParsedTicket | null>(null);
   const [results, setResults] = useState<QueryResult[]>([]);
+  const [processedTickets, setProcessedTickets] = useState<ProcessedTicket[]>([]);
   const [isApiMode, setIsApiMode] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [isOneClickRunning, setIsOneClickRunning] = useState(false);
@@ -844,6 +859,9 @@ Execution timestamp: ${new Date().toISOString()}`;
   const handleOneClickAutomation = async () => {
     try {
       setIsOneClickRunning(true);
+      setProcessedTickets([]); // Clear previous results
+      const allProcessedTickets: ProcessedTicket[] = [];
+      
       toast({
         title: "Starting One-Click Automation",
         description: "Processing multiple Helix tickets automatically..."
@@ -871,9 +889,10 @@ Execution timestamp: ${new Date().toISOString()}`;
         const idMatch = ticketContent.match(/Ticket #([\w-]+)/);
 
         if (sqlMatch && criteriaMatch && idMatch) {
+          let currentSql = sqlMatch[1].trim();
           const newParsedTicket = {
             id: idMatch[1],
-            sql: sqlMatch[1].trim(),
+            sql: currentSql,
             criteria: criteriaMatch[1].trim(),
             isValid: true
           };
@@ -890,7 +909,8 @@ Execution timestamp: ${new Date().toISOString()}`;
           const ticket = mockHelixTickets[ticketId];
           if (ticket && ticketId === 'HELIX-11111') {
             // This ticket needs fixing
-            const fixedSql = await mockAIFixSQL(newParsedTicket.sql);
+            const fixedSql = await mockAIFixSQL(currentSql);
+            currentSql = fixedSql;
             const fixedTicket = {
               ...newParsedTicket,
               sql: fixedSql,
@@ -906,8 +926,7 @@ Execution timestamp: ${new Date().toISOString()}`;
             await new Promise(resolve => setTimeout(resolve, 500));
           }
 
-          // Step 4: Execute query
-          setStep(3);
+          // Step 4: Execute query and evaluate
           let queryResults = mockHelixTickets[ticketId]?.mockResults || [];
           
           if (typeof queryResults === 'object' && !Array.isArray(queryResults)) {
@@ -918,22 +937,42 @@ Execution timestamp: ${new Date().toISOString()}`;
             queryResults = [];
           }
           
+          // Set current results for evaluation
           setResults(queryResults);
+          
+          // Evaluate criteria for this specific ticket
+          const evaluation = evaluateTicketCriteria(ticketId, queryResults, newParsedTicket.criteria);
+          
+          // Store processed ticket
+          const processedTicket: ProcessedTicket = {
+            id: ticketId,
+            sql: currentSql,
+            criteria: newParsedTicket.criteria,
+            results: queryResults,
+            evaluation,
+            isMultiQuery: ticket?.sqlQueries ? true : false
+          };
+          
+          allProcessedTickets.push(processedTicket);
           
           toast({
             title: `${ticketId} Executed`,
-            description: `Query completed with ${queryResults.length} rows`
+            description: `Query completed with ${queryResults.length} rows - ${evaluation.passed ? 'PASSED' : 'FAILED'}`
           });
           
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
+      // Step 5: Show all results
+      setStep(3);
+      setProcessedTickets(allProcessedTickets);
+      
       // Final results
-      const finalEvaluation = evaluateCriteria();
+      const passedCount = allProcessedTickets.filter(t => t.evaluation.passed).length;
       toast({
         title: "One-Click Automation Complete",
-        description: `All tickets processed. Final status: ${finalEvaluation.passed ? 'PASSED' : 'CRITERIA EVALUATION AVAILABLE'}`,
+        description: `All tickets processed. ${passedCount}/${allProcessedTickets.length} tickets passed criteria`,
         variant: "default"
       });
       
@@ -948,11 +987,91 @@ Execution timestamp: ${new Date().toISOString()}`;
     }
   };
 
+  // New function to evaluate criteria for a specific ticket
+  const evaluateTicketCriteria = (ticketId: string, ticketResults: any[], criteria: string) => {
+    const ticket = mockHelixTickets[ticketId];
+    
+    if (ticket && ticket.mockResults && typeof ticket.mockResults === 'object' && !Array.isArray(ticket.mockResults)) {
+      // Multi-query ticket
+      return evaluateMultiQueryCriteria(ticketId, ticket.mockResults);
+    }
+    
+    // Single query evaluation
+    const rowCount = ticketResults.length;
+    
+    if (ticketId === 'HELIX-54321') {
+      // Inventory ticket
+      const minInventory = Math.min(...ticketResults.map(r => (r as any).inventory_count || 0));
+      const rowCountPassed = rowCount > 200;
+      const minInventoryPassed = minInventory < 10;
+      
+      return {
+        passed: rowCountPassed && minInventoryPassed,
+        message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 200), MIN(inventory_count) = ${minInventory} (${minInventoryPassed ? '✅' : '❌'} < 10)`,
+        rowCount
+      };
+    } else if (ticketId === 'HELIX-11111') {
+      // Fixed SQL ticket
+      const maxSales = Math.max(...ticketResults.map(r => r.sales || 0));
+      const rowCountPassed = rowCount > 80;
+      const maxSalesPassed = maxSales > 3000;
+      
+      return {
+        passed: rowCountPassed && maxSalesPassed,
+        message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 80), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 3000)`,
+        rowCount
+      };
+    }
+    
+    // Default criteria
+    const maxSales = Math.max(...ticketResults.map(r => r.sales || 0));
+    const rowCountPassed = rowCount > 100;
+    const maxSalesPassed = maxSales > 5000;
+    
+    return {
+      passed: rowCountPassed && maxSalesPassed,
+      message: `ROWCOUNT = ${rowCount} (${rowCountPassed ? '✅' : '❌'} > 100), MAX(sales) = ${maxSales} (${maxSalesPassed ? '✅' : '❌'} > 5000)`,
+      rowCount
+    };
+  };
+
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
     toast({
       title: "Copied to clipboard",
       description: `${type} template has been copied.`
+    });
+  };
+
+  const downloadAllResults = () => {
+    const allResultsData = {
+      timestamp: new Date().toISOString(),
+      totalTickets: processedTickets.length,
+      passedTickets: processedTickets.filter(t => t.evaluation.passed).length,
+      failedTickets: processedTickets.filter(t => !t.evaluation.passed).length,
+      tickets: processedTickets.map(ticket => ({
+        id: ticket.id,
+        sql: ticket.sql,
+        criteria: ticket.criteria,
+        evaluation: ticket.evaluation,
+        resultsCount: ticket.results.length,
+        results: ticket.results
+      }))
+    };
+    
+    const blob = new Blob([JSON.stringify(allResultsData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'all_helix_tickets_results.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "All Results Downloaded",
+      description: `Complete results for ${processedTickets.length} tickets saved`
     });
   };
 
@@ -1285,104 +1404,241 @@ Execution timestamp: ${new Date().toISOString()}`;
         {/* Step 3: Results */}
         {step === 3 && (
           <div className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-6 h-6" />
-                    Step 3: Query Results
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => downloadResults(`${parsedTicket?.id || 'query'}_results.json`)}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download Results
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-               <CardContent>
-                 {(() => {
-                   const criteria = evaluateCriteria();
-                   return (criteria as any).queryEvaluations ? (
-                     <MultiQueryResults 
-                       ticketId={parsedTicket?.id || ''}
-                       queryEvaluations={(criteria as any).queryEvaluations}
-                       overallPassed={criteria.passed}
-                     />
-                   ) : (
-                   <>
-                     <div className="mb-4">
-                       <Badge 
-                         variant={evaluateCriteria().passed ? "default" : "destructive"}
-                         className="text-sm p-2"
-                       >
-                         {evaluateCriteria().passed ? '✅ Criteria Met' : '❌ Criteria Failed'}
-                       </Badge>
-                       <p className="text-sm text-gray-600 mt-2">
-                         {evaluateCriteria().message}
-                       </p>
-                     </div>
+            {processedTickets.length > 0 ? (
+              /* Show all processed tickets */
+              <>
+                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-6 h-6" />
+                        All Processed Helix Tickets ({processedTickets.length})
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadAllResults()}
+                          className="flex items-center gap-1"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download All Results
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="mb-4">
+                      <div className="flex gap-4">
+                        <Badge variant="default" className="text-sm p-2">
+                          ✅ {processedTickets.filter(t => t.evaluation.passed).length} Passed
+                        </Badge>
+                        <Badge variant="destructive" className="text-sm p-2">
+                          ❌ {processedTickets.filter(t => !t.evaluation.passed).length} Failed
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
 
-                     {/* Visual Criteria Indicators */}
-                     <div className="mb-6">
-                       <h3 className="font-semibold mb-4 flex items-center gap-2">
-                         <BarChart3 className="w-5 h-5" />
-                         Criteria Visualization
-                       </h3>
-                       <SimpleCriteriaChart 
-                         rowCount={evaluateCriteria().rowCount} 
-                         maxSales={evaluateCriteria().maxSales}
-                         results={results}
-                       />
-                     </div>
+                {/* Individual Ticket Results */}
+                <div className="space-y-6">
+                  {processedTickets.map((ticket, index) => (
+                    <Card key={ticket.id} className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                      <CardHeader>
+                        <CardTitle className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {ticket.evaluation.passed ? 
+                              <CheckCircle className="w-6 h-6 text-green-500" /> : 
+                              <XCircle className="w-6 h-6 text-red-500" />
+                            }
+                            Ticket #{ticket.id}
+                            <Badge variant={ticket.evaluation.passed ? "default" : "destructive"} className="ml-2">
+                              {ticket.evaluation.passed ? 'PASSED' : 'FAILED'}
+                            </Badge>
+                          </div>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* SQL Query */}
+                        <div>
+                          <h4 className="font-semibold mb-2">SQL Query:</h4>
+                          <div className="bg-gray-900 text-green-400 font-mono text-sm p-4 rounded-lg max-h-48 overflow-y-auto">
+                            <pre className="whitespace-pre-wrap">{ticket.sql}</pre>
+                          </div>
+                        </div>
 
-                     <div className="border rounded-lg overflow-hidden">
-                       <div className="bg-gray-50 px-4 py-2 border-b">
-                         <p className="font-semibold">Query Results ({results.length} rows)</p>
-                       </div>
-                       <div className="max-h-64 overflow-y-auto">
-                         <table className="w-full text-sm">
-                           <thead className="bg-gray-100">
-                             <tr>
-                               {results.length > 0 && Object.keys(results[0]).map((key) => (
-                                 <th key={key} className="text-left p-2 capitalize">
-                                   {key.replace(/_/g, ' ')}
-                                 </th>
-                               ))}
-                             </tr>
-                           </thead>
-                           <tbody>
-                             {results.slice(0, 10).map((row, i) => (
-                               <tr key={i} className="border-t">
-                                 {Object.values(row).map((value, j) => (
-                                   <td key={j} className="p-2">
-                                     {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
-                                       ? `$${value.toLocaleString()}` 
-                                       : String(value)
-                                     }
-                                   </td>
-                                 ))}
-                               </tr>
-                             ))}
-                           </tbody>
-                         </table>
-                         {results.length > 10 && (
-                           <div className="p-2 text-center text-gray-500 border-t">
-                             ... and {results.length - 10} more rows
-                           </div>
-                         )}
-                       </div>
-                     </div>
-                    </>
-                  );
-                })()}
-               </CardContent>
-            </Card>
+                        {/* Success Criteria */}
+                        <div>
+                          <h4 className="font-semibold mb-2">Success Criteria:</h4>
+                          <Badge variant="outline" className="text-sm p-2">
+                            {ticket.criteria}
+                          </Badge>
+                        </div>
+
+                        {/* Evaluation Results */}
+                        <div>
+                          <h4 className="font-semibold mb-2">Evaluation Results:</h4>
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="text-sm">{ticket.evaluation.message}</p>
+                          </div>
+                        </div>
+
+                        {/* Query Results */}
+                        {ticket.evaluation.queryEvaluations ? (
+                          <MultiQueryResults 
+                            ticketId={ticket.id}
+                            queryEvaluations={ticket.evaluation.queryEvaluations}
+                            overallPassed={ticket.evaluation.passed}
+                          />
+                        ) : (
+                          <div>
+                            <h4 className="font-semibold mb-2">Query Results ({ticket.results.length} rows):</h4>
+                            <div className="border rounded-lg overflow-hidden max-h-64">
+                              <div className="bg-gray-50 px-4 py-2 border-b">
+                                <p className="font-medium">Results Preview</p>
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-100">
+                                    <tr>
+                                      {ticket.results.length > 0 && Object.keys(ticket.results[0]).map((key) => (
+                                        <th key={key} className="text-left p-2 capitalize">
+                                          {key.replace(/_/g, ' ')}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ticket.results.slice(0, 5).map((row, i) => (
+                                      <tr key={i} className="border-t">
+                                        {Object.values(row).map((value, j) => (
+                                          <td key={j} className="p-2">
+                                            {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
+                                              ? `$${value.toLocaleString()}` 
+                                              : String(value)
+                                            }
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                {ticket.results.length > 5 && (
+                                  <div className="p-2 text-center text-gray-500 border-t">
+                                    ... and {ticket.results.length - 5} more rows
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            ) : (
+              /* Single ticket results (original behavior) */
+              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-6 h-6" />
+                      Step 3: Query Results
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => downloadResults(`${parsedTicket?.id || 'query'}_results.json`)}
+                        className="flex items-center gap-1"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Results
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const criteria = evaluateCriteria();
+                    return (criteria as any).queryEvaluations ? (
+                      <MultiQueryResults 
+                        ticketId={parsedTicket?.id || ''}
+                        queryEvaluations={(criteria as any).queryEvaluations}
+                        overallPassed={criteria.passed}
+                      />
+                    ) : (
+                    <>
+                      <div className="mb-4">
+                        <Badge 
+                          variant={evaluateCriteria().passed ? "default" : "destructive"}
+                          className="text-sm p-2"
+                        >
+                          {evaluateCriteria().passed ? '✅ Criteria Met' : '❌ Criteria Failed'}
+                        </Badge>
+                        <p className="text-sm text-gray-600 mt-2">
+                          {evaluateCriteria().message}
+                        </p>
+                      </div>
+
+                      {/* Visual Criteria Indicators */}
+                      <div className="mb-6">
+                        <h3 className="font-semibold mb-4 flex items-center gap-2">
+                          <BarChart3 className="w-5 h-5" />
+                          Criteria Visualization
+                        </h3>
+                        <SimpleCriteriaChart 
+                          rowCount={evaluateCriteria().rowCount} 
+                          maxSales={evaluateCriteria().maxSales}
+                          results={results}
+                        />
+                      </div>
+
+                      <div className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b">
+                          <p className="font-semibold">Query Results ({results.length} rows)</p>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                {results.length > 0 && Object.keys(results[0]).map((key) => (
+                                  <th key={key} className="text-left p-2 capitalize">
+                                    {key.replace(/_/g, ' ')}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {results.slice(0, 10).map((row, i) => (
+                                <tr key={i} className="border-t">
+                                  {Object.values(row).map((value, j) => (
+                                    <td key={j} className="p-2">
+                                      {typeof value === 'number' && (value > 100 || String(value).includes('.')) 
+                                        ? `$${value.toLocaleString()}` 
+                                        : String(value)
+                                      }
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {results.length > 10 && (
+                            <div className="p-2 text-center text-gray-500 border-t">
+                              ... and {results.length - 10} more rows
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                     </>
+                   );
+                 })()}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Email and Helix Templates */}
             <div className="grid md:grid-cols-2 gap-6">
@@ -1438,6 +1694,7 @@ Execution timestamp: ${new Date().toISOString()}`;
                   setTicketContent('');
                   setParsedTicket(null);
                   setResults([]);
+                  setProcessedTickets([]);
                 }}
                 variant="outline"
                 className="mx-auto"
