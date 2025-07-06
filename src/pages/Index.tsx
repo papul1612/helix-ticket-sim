@@ -37,6 +37,7 @@ const Index = () => {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [isApiMode, setIsApiMode] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [isOneClickRunning, setIsOneClickRunning] = useState(false);
   const [helixTicketNumber, setHelixTicketNumber] = useState('');
   const [isRetrievingTicket, setIsRetrievingTicket] = useState(false);
   const [showFullViewEditor, setShowFullViewEditor] = useState(false);
@@ -842,44 +843,108 @@ Execution timestamp: ${new Date().toISOString()}`;
 
   const handleOneClickAutomation = async () => {
     try {
+      setIsOneClickRunning(true);
       toast({
         title: "Starting One-Click Automation",
-        description: "Retrieving ticket, executing SQL, and updating results..."
+        description: "Processing multiple Helix tickets automatically..."
       });
 
-      // Step 1: Retrieve Helix ticket (simulate getting the latest ticket)
-      const defaultTicket = 'HELIX-12345';
-      await retrieveHelixTicket(defaultTicket);
+      // Define tickets to process
+      const ticketsToProcess = ['HELIX-12345', 'HELIX-11111', 'HELIX-22222'];
       
-      // Small delay to allow state update
-      setTimeout(async () => {
-        // Step 2: Parse the ticket
-        handleParseTicket();
+      for (let i = 0; i < ticketsToProcess.length; i++) {
+        const ticketId = ticketsToProcess[i];
         
-        // Wait for parsing to complete
-        setTimeout(async () => {
-          // Step 3: Execute SQL automatically
-          if (parsedTicket) {
-            handleExecuteQuery();
+        toast({
+          title: `Processing Ticket ${i + 1}/${ticketsToProcess.length}`,
+          description: `Retrieving ${ticketId}...`
+        });
+
+        // Step 1: Retrieve ticket
+        await retrieveHelixTicket(ticketId);
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // Step 2: Parse ticket
+        setStep(2);
+        const sqlMatch = ticketContent.match(/```sql\s*([\s\S]*?)\s*```/);
+        const criteriaMatch = ticketContent.match(/Success Criteria:\s*(.+)/);
+        const idMatch = ticketContent.match(/Ticket #([\w-]+)/);
+
+        if (sqlMatch && criteriaMatch && idMatch) {
+          const newParsedTicket = {
+            id: idMatch[1],
+            sql: sqlMatch[1].trim(),
+            criteria: criteriaMatch[1].trim(),
+            isValid: true
+          };
+          setParsedTicket(newParsedTicket);
+          
+          toast({
+            title: `Ticket ${ticketId} Parsed`,
+            description: "SQL extracted successfully, checking for fixes..."
+          });
+          
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Step 3: Auto-fix if needed
+          const ticket = mockHelixTickets[ticketId];
+          if (ticket && ticketId === 'HELIX-11111') {
+            // This ticket needs fixing
+            const fixedSql = await mockAIFixSQL(newParsedTicket.sql);
+            const fixedTicket = {
+              ...newParsedTicket,
+              sql: fixedSql,
+              isFixed: true
+            };
+            setParsedTicket(fixedTicket);
             
-            // Step 4: Generate and show final status
-            setTimeout(() => {
-              const evaluation = evaluateCriteria();
-              toast({
-                title: "One-Click Automation Complete",
-                description: `Ticket processed successfully. Status: ${evaluation.passed ? 'PASSED' : 'FAILED'}`,
-                variant: evaluation.passed ? "default" : "destructive"
-              });
-            }, 2000);
+            toast({
+              title: `SQL Fixed for ${ticketId}`,
+              description: "SQL syntax errors corrected automatically"
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
-        }, 1000);
-      }, 1500);
+
+          // Step 4: Execute query
+          setStep(3);
+          let queryResults = mockHelixTickets[ticketId]?.mockResults || [];
+          
+          if (typeof queryResults === 'object' && !Array.isArray(queryResults)) {
+            queryResults = queryResults.query1 || [];
+          }
+          
+          if (!Array.isArray(queryResults)) {
+            queryResults = [];
+          }
+          
+          setResults(queryResults);
+          
+          toast({
+            title: `${ticketId} Executed`,
+            description: `Query completed with ${queryResults.length} rows`
+          });
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Final results
+      const finalEvaluation = evaluateCriteria();
+      toast({
+        title: "One-Click Automation Complete",
+        description: `All tickets processed. Final status: ${finalEvaluation.passed ? 'PASSED' : 'CRITERIA EVALUATION AVAILABLE'}`,
+        variant: "default"
+      });
+      
     } catch (error) {
       toast({
         title: "Automation Failed",
         description: "An error occurred during one-click automation.",
         variant: "destructive"
       });
+    } finally {
+      setIsOneClickRunning(false);
     }
   };
 
@@ -1033,19 +1098,12 @@ Execution timestamp: ${new Date().toISOString()}`;
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setIsBatchMode(true)}
-                  className="text-sm"
-                >
-                  <FileStack className="w-4 h-4 mr-2" />
-                  Batch Processing
-                </Button>
-                <Button
-                  variant="outline"
                   onClick={handleOneClickAutomation}
-                  className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
+                  disabled={isOneClickRunning}
+                  className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50"
                 >
                   <Wrench className="w-4 h-4 mr-2" />
-                  One-Click Automation
+                  {isOneClickRunning ? "Processing..." : "One-Click Automation"}
                 </Button>
                 <Button
                   variant="outline"
@@ -1156,40 +1214,6 @@ Execution timestamp: ${new Date().toISOString()}`;
                 <CheckCircle className="w-6 h-6" />
                 Step 2: SQL Validation
               </CardTitle>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant={!isApiMode ? "default" : "outline"}
-                  onClick={() => setIsApiMode(false)}
-                  className="text-sm"
-                >
-                  <Clipboard className="w-4 h-4 mr-2" />
-                  Paste Mode
-                </Button>
-                <Button
-                  variant={isApiMode ? "default" : "outline"}
-                  onClick={() => setIsApiMode(true)}
-                  className="text-sm"
-                >
-                  <Database className="w-4 h-4 mr-2" />
-                  API Connected
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsBatchMode(true)}
-                  className="text-sm"
-                >
-                  <FileStack className="w-4 h-4 mr-2" />
-                  Batch Processing
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleOneClickAutomation}
-                  className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
-                >
-                  <Wrench className="w-4 h-4 mr-2" />
-                  One-Click Automation
-                </Button>
-              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
@@ -1269,38 +1293,6 @@ Execution timestamp: ${new Date().toISOString()}`;
                     Step 3: Query Results
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <Button
-                      variant={!isApiMode ? "default" : "outline"}
-                      onClick={() => setIsApiMode(false)}
-                      className="text-sm"
-                    >
-                      <Clipboard className="w-4 h-4 mr-2" />
-                      Paste Mode
-                    </Button>
-                    <Button
-                      variant={isApiMode ? "default" : "outline"}
-                      onClick={() => setIsApiMode(true)}
-                      className="text-sm"
-                    >
-                      <Database className="w-4 h-4 mr-2" />
-                      API Connected
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsBatchMode(true)}
-                      className="text-sm"
-                    >
-                      <FileStack className="w-4 h-4 mr-2" />
-                      Batch Processing
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleOneClickAutomation}
-                      className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
-                    >
-                      <Wrench className="w-4 h-4 mr-2" />
-                      One-Click Automation
-                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
