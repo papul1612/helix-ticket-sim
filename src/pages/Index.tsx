@@ -840,6 +840,49 @@ Details: ${evaluation.message}
 Execution timestamp: ${new Date().toISOString()}`;
   };
 
+  const handleOneClickAutomation = async () => {
+    try {
+      toast({
+        title: "Starting One-Click Automation",
+        description: "Retrieving ticket, executing SQL, and updating results..."
+      });
+
+      // Step 1: Retrieve Helix ticket (simulate getting the latest ticket)
+      const defaultTicket = 'HELIX-12345';
+      await retrieveHelixTicket(defaultTicket);
+      
+      // Small delay to allow state update
+      setTimeout(async () => {
+        // Step 2: Parse the ticket
+        handleParseTicket();
+        
+        // Wait for parsing to complete
+        setTimeout(async () => {
+          // Step 3: Execute SQL automatically
+          if (parsedTicket) {
+            handleExecuteQuery();
+            
+            // Step 4: Generate and show final status
+            setTimeout(() => {
+              const evaluation = evaluateCriteria();
+              toast({
+                title: "One-Click Automation Complete",
+                description: `Ticket processed successfully. Status: ${evaluation.passed ? 'PASSED' : 'FAILED'}`,
+                variant: evaluation.passed ? "default" : "destructive"
+              });
+            }, 2000);
+          }
+        }, 1000);
+      }, 1500);
+    } catch (error) {
+      toast({
+        title: "Automation Failed",
+        description: "An error occurred during one-click automation.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
     toast({
@@ -971,14 +1014,38 @@ Execution timestamp: ${new Date().toISOString()}`;
                 <Clipboard className="w-6 h-6" />
                 Step 1: Paste Ticket Content
               </CardTitle>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant={!isApiMode ? "default" : "outline"}
+                  onClick={() => setIsApiMode(false)}
+                  className="text-sm"
+                >
+                  <Clipboard className="w-4 h-4 mr-2" />
+                  Paste Mode
+                </Button>
                 <Button
                   variant={isApiMode ? "default" : "outline"}
-                  onClick={() => setIsApiMode(!isApiMode)}
+                  onClick={() => setIsApiMode(true)}
                   className="text-sm"
                 >
                   <Database className="w-4 h-4 mr-2" />
-                  {isApiMode ? "API Connected" : "Paste Mode"}
+                  API Connected
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsBatchMode(true)}
+                  className="text-sm"
+                >
+                  <FileStack className="w-4 h-4 mr-2" />
+                  Batch Processing
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleOneClickAutomation}
+                  className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
+                >
+                  <Wrench className="w-4 h-4 mr-2" />
+                  One-Click Automation
                 </Button>
                 <Button
                   variant="outline"
@@ -1089,14 +1156,38 @@ Execution timestamp: ${new Date().toISOString()}`;
                 <CheckCircle className="w-6 h-6" />
                 Step 2: SQL Validation
               </CardTitle>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant={!isApiMode ? "default" : "outline"}
+                  onClick={() => setIsApiMode(false)}
+                  className="text-sm"
+                >
+                  <Clipboard className="w-4 h-4 mr-2" />
+                  Paste Mode
+                </Button>
                 <Button
                   variant={isApiMode ? "default" : "outline"}
-                  onClick={() => setIsApiMode(!isApiMode)}
+                  onClick={() => setIsApiMode(true)}
                   className="text-sm"
                 >
                   <Database className="w-4 h-4 mr-2" />
-                  {isApiMode ? "API Connected" : "Paste Mode"}
+                  API Connected
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsBatchMode(true)}
+                  className="text-sm"
+                >
+                  <FileStack className="w-4 h-4 mr-2" />
+                  Batch Processing
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleOneClickAutomation}
+                  className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
+                >
+                  <Wrench className="w-4 h-4 mr-2" />
+                  One-Click Automation
                 </Button>
               </div>
             </CardHeader>
@@ -1177,14 +1268,38 @@ Execution timestamp: ${new Date().toISOString()}`;
                     <Database className="w-6 h-6" />
                     Step 3: Query Results
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant={!isApiMode ? "default" : "outline"}
+                      onClick={() => setIsApiMode(false)}
+                      className="text-sm"
+                    >
+                      <Clipboard className="w-4 h-4 mr-2" />
+                      Paste Mode
+                    </Button>
                     <Button
                       variant={isApiMode ? "default" : "outline"}
-                      onClick={() => setIsApiMode(!isApiMode)}
+                      onClick={() => setIsApiMode(true)}
                       className="text-sm"
                     >
                       <Database className="w-4 h-4 mr-2" />
-                      {isApiMode ? "API Connected" : "Paste Mode"}
+                      API Connected
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsBatchMode(true)}
+                      className="text-sm"
+                    >
+                      <FileStack className="w-4 h-4 mr-2" />
+                      Batch Processing
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleOneClickAutomation}
+                      className="text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
+                    >
+                      <Wrench className="w-4 h-4 mr-2" />
+                      One-Click Automation
                     </Button>
                     <Button
                       variant="outline"
