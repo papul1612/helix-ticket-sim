@@ -78,6 +78,9 @@ export const SqlFixButton = ({ sql, onSqlFixed }: SqlFixButtonProps) => {
 const mockAIFixSQL = (sql: string): Promise<string> => {
   return new Promise((resolve) => {
     setTimeout(() => {
+      // Split SQL into individual queries (split by query comments)
+      const queryBlocks = sql.split(/(?=--\s*Query\s+\d+:)/i).filter(block => block.trim());
+      
       // Common fixes
       const fixes: [RegExp, string][] = [
         [/SELCT/gi, 'SELECT'],
@@ -97,31 +100,50 @@ const mockAIFixSQL = (sql: string): Promise<string> => {
         [/'March 31st 2024'/g, "'2024-03-31'"],
       ];
 
-      let fixedSql = sql;
-      fixes.forEach(([pattern, replacement]) => {
-        fixedSql = fixedSql.replace(pattern, replacement);
+      const fixedQueries = queryBlocks.map(queryBlock => {
+        let fixedQuery = queryBlock;
+        
+        // Apply common fixes to each query
+        fixes.forEach(([pattern, replacement]) => {
+          fixedQuery = fixedQuery.replace(pattern, replacement);
+        });
+
+        // Add LIMIT if missing for this query
+        if (!fixedQuery.includes('LIMIT') && !fixedQuery.includes('TOP')) {
+          fixedQuery = fixedQuery.replace(/(ORDER BY.+?)(;|$)/i, '$1 LIMIT 1000$2');
+        }
+
+        // Add missing semicolons for this query
+        if (!fixedQuery.trim().endsWith(';')) {
+          fixedQuery = fixedQuery.trim() + ';';
+        }
+
+        // Format each query individually
+        const lines = fixedQuery.split('\n');
+        const formattedLines = lines.map(line => {
+          const trimmedLine = line.trim();
+          
+          // Keep comment lines as-is
+          if (trimmedLine.startsWith('--')) {
+            return trimmedLine;
+          }
+          
+          // Format SQL keywords on new lines only within the SQL part
+          let formattedLine = trimmedLine
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .replace(/\bFROM\b/gi, '\nFROM')
+            .replace(/\bWHERE\b/gi, '\nWHERE')
+            .replace(/\bORDER BY\b/gi, '\nORDER BY')
+            .replace(/\bGROUP BY\b/gi, '\nGROUP BY');
+          
+          return formattedLine;
+        });
+
+        return formattedLines.join('\n').trim();
       });
 
-      // Add LIMIT if missing
-      if (!fixedSql.includes('LIMIT') && !fixedSql.includes('TOP')) {
-        fixedSql = fixedSql.replace(/(ORDER BY.+?)(;|$)/i, '$1 LIMIT 1000$2');
-      }
-
-      // Add missing semicolons
-      if (!fixedSql.trim().endsWith(';')) {
-        fixedSql = fixedSql.trim() + ';';
-      }
-
-      // Format SQL - minimal formatting, only where needed
-      fixedSql = fixedSql
-        .replace(/\s+/g, ' ') // Normalize whitespace first
-        .replace(/\bFROM\b/gi, '\nFROM')
-        .replace(/\bWHERE\b/gi, '\nWHERE')
-        .replace(/\bORDER BY\b/gi, '\nORDER BY')
-        .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
-        .trim();
-
-      resolve(fixedSql);
+      const finalSql = fixedQueries.join('\n\n');
+      resolve(finalSql);
     }, 800);
   });
 };
