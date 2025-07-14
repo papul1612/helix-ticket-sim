@@ -1714,8 +1714,8 @@ Execution timestamp: ${new Date().toISOString()}`;
                 SQL Editor - Full View
               </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 space-y-4">
-              <div className="flex-1">
+            <div className="flex-1 flex flex-col">
+              <div className="flex-1 mb-4">
                 <Textarea
                   value={parsedTicket?.sql || ''}
                   onChange={(e) => {
@@ -1732,7 +1732,7 @@ Execution timestamp: ${new Date().toISOString()}`;
                   placeholder="SQL query..."
                 />
               </div>
-              <div className="flex justify-between items-center pt-4 border-t">
+              <div className="flex justify-between items-center py-3 px-4 border-t bg-background">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">Success Criteria:</span>
                   <Badge variant="outline" className="text-xs">
